@@ -59,15 +59,14 @@ Syntax is ridiculously easy. Any variable can be interpreted as any other type u
 - **🕸️ argument_name** indicates the next function argument. Think of a web tangling the arguments as the stack tape goes through them.
 - **🎃 variable = value** sets a local variable name to the value computed by the right-hand-side expression. Pumpkins!
 - **🍭 condition_value → return_value** checks the condition by parsing its expression. If the condition evaluates to 0, the rest of the declaration is skipped. If it evaluates to non-zero, it parses the
-returned value expression and returns its outcome (prevents further statements in the function from running). Who doesn't like early returns, right? "Lick" the condition like a candy and check if it's in our taste. Can use this for sequential code when using functions like printing ones, which always return zero and hence need not have the arrow and return branch.
-- **🏚️ namespace_name** starts a new namespace for variables (there are no nested functions or namespaces). It runs upon declaration, becomes a system exit code if it returns a non-zero value, and
-it variables can be accessed within expressions. This is our haunted house. Fitting, I hope.
+returned value expression and returns its outcome (prevents further statements in the function from running). Who doesn't like early returns, right? "Lick" the condition like a candy and check if it's in our taste. Can use this for sequential code when using functions that always return zero and hence need not have the arrow and return branch (conditions skip to the next declaration).
+- **🏚️ namespace_name** This is our haunted house. It starts a new namespace for variables (there are no nested functions or namespaces). It runs upon declaration, and becomes a system exit code if it returns a non-zero value. If the program is still alive and kickin, its variables can be accessed within expressions.
 
 **expressions**
-- Constants and local variables are expressions.
+- Constants and local variables are expressions. Constants can be strings, nats, or floats.
 - Access namespace variables via `namespace::varname`. 
 - Call functions with comma-separated arguments in parentheses like `nadd(x,y)`. Arguments are parsed expressions themselves (),
-- optionally, call functions with one argument using
+- optionally, call functions with one argument using syntax like `cos|3.141592`. This makes for handy chaining.
 
 **builtin functions**
 
@@ -106,9 +105,9 @@ Can happen to the best of us.
 *Q: Can I use this?*
 
 Sure, if you want some simple file processing
-or system scripting. Nearly as fast as 
-python and its executable is <128KB. Can 
-you your system's curl and stuff via 
+or system scripting. Comparably fast to
+Python and its executable is <128KB. Can 
+call your system's curl and stuff via 
 the `exec` command.
 
 *Q: Is there a type system?*
@@ -144,7 +143,7 @@ for maximum spookiness:
 \sp 🏚️
 \do 🍭
 \permit 🕯️
-\del 🪦  (current unused)
+\del 🪦  (currently unused)
 \then →
 ```
 
