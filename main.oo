@@ -20,7 +20,6 @@
     🍭 sprint|exec|"ls"
     🍭 nprint|get(mylist,0)
     🍭 nprint|fib(30)
-    🎃 path = "test.txt" 
-    🎃 path = "test.txt" 
+    🎃 path = "test.txt"
     🍭 dummy(path)
     🍭 sprint|read|path

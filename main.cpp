@@ -104,8 +104,13 @@ namespace tags {
     const u16 isglobal = 4;
 }
 
-vector<vector<u64>> lists;
-vector<vector<u64>> strings;
+struct ListEntry { u64* ptr; u32 refcount; u32 size; };
+struct StringEntry { char* ptr; u32 refcount; u32 size; };
+vector<ListEntry> lists;
+vector<StringEntry> strings;
+
+struct _Identifier { u32 start; u16 len_plus_one; u16 host; }; // reserve zero len for consuming until the end
+union Identifier { u64 id; _Identifier meta; };
 vector<FILE*> files;
 unordered_map<string, u64> token2id;
 vector<string> tokens;
@@ -113,7 +118,8 @@ const u64 STACK_SIZE = 1024*1024*4; // 4 MB
 u64* stack = new u64[STACK_SIZE];
 inline f64 toreal(u64 x) {f64 ret;std::memcpy(&ret,&x,sizeof(ret));return ret;}
 inline u64 fromreal(f64 x) {u64 ret;std::memcpy(&ret,&x,sizeof(ret));return ret;}
-inline u16 tou16(size_t x) { assert(x<65535); return static_cast<u16>(x); }
+inline u16 tou16(u64 x) { assert(x<65535); return static_cast<u16>(x); }
+inline u32 tou32(u64 x) { assert(x<4294967296); return static_cast<u32>(x); }
 inline size_t id(const string& text) {
     auto found = token2id.find(text);
     if(found!=token2id.end()) return found->second;
@@ -140,6 +146,65 @@ void error(const string& description, const Token& tok) {
     cout<<"   \e[0;33mat\e[0m "<<filename<<" line "<<tok.row<<"\n";
     // s
     exit(1);
+}
+u64 pack(u64 host, u64 start, u64 len_plus_one) {
+    Identifier idf;
+    idf.meta.host = tou32(host);
+    idf.meta.start = tou16(start);
+    idf.meta.len_plus_one = tou16(len_plus_one);
+    return idf.id;
+}
+_Identifier unpack(u64 id) {
+    Identifier idf;
+    idf.id = id;
+    return idf.meta;
+}
+u64 register_string(const string& name) {
+    auto n = name.size();
+    auto ptr = (char*)malloc(n);
+    for (int index=0; index<n; index++)
+        ptr[index] = name[index];
+    auto pos = strings.size();
+    strings.push_back(StringEntry{.ptr=ptr, .refcount=1, .size=tou32(n)});
+    return pack(pos,0,0);
+}
+string_view get_string(u64 _meta, const Token& error_token) {
+    auto meta = unpack(_meta);
+    if(meta.host>=strings.size()) error("not existing string index: "+to_string(meta.host), error_token);
+    auto entry = strings[meta.host];
+    if(!entry.ptr) error("no string exists anymore at index: "+to_string(meta.host), error_token);
+    auto start = u64{meta.start};
+    auto len = u64{meta.len_plus_one};
+    if(start>entry.size) error("substring start is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start), error_token);
+    if(!len) len = entry.size-start;
+    else {
+        len = len-1;
+        if(start+len>entry.size) error("substring is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start)+" and length "+to_string(len), error_token);
+    }
+    return string_view(entry.ptr+start, len);
+}
+u64 register_list(u64* ptr, u64 n) {
+    auto pos = lists.size();
+    lists.push_back(ListEntry{.ptr=ptr, .refcount=1, .size=tou32(n)});
+    return pack(pos,0,0);
+}
+
+struct ReturnList { u64* ptr; u64 len; };
+ReturnList get_list(u64 _meta, const Token& error_token) {
+    static_assert (sizeof(_Identifier) == sizeof(u64), "Identifier is not properly aligned.");
+    auto meta = unpack(_meta);
+    if(meta.host>=lists.size()) error("not existing list index: "+to_string(meta.host), error_token);
+    auto entry = lists[meta.host];
+    if(!entry.ptr) error("no list exists anymore at index: "+to_string(meta.host), error_token);
+    auto start = u64{meta.start};
+    auto len = u64{meta.len_plus_one};
+    if(start>entry.size) error("sublist start is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start), error_token);
+    if(!len) len = entry.size-start;
+    else {
+        len = len-1;
+        if(start+len>entry.size) error("sublist is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start)+" and length "+to_string(len)+" but the total length is "+to_string(entry.size), error_token);
+    }
+    return ReturnList{.ptr=entry.ptr+start, .len=len};
 }
 
 #define ASSERT_SIZE(desired_size) if(arg_stack_end!=arg_stack_pos+desired_size)error("wrong number of input arguments to unpack in builtin function: "+totoken(func_name), program[error_token]);
@@ -229,36 +294,35 @@ inline u64 process_expression(const vector<Token>& program, const unordered_map<
             }
             case syntax::lget: {
                 ASSERT_SIZE(2);
-                auto list_index = stack[arg_stack_pos];
-                if(list_index>=lists.size()) error("list #"+to_string(list_index)+" does not exist", program[func_pos]);
-                auto& list = lists[list_index];
-                auto get_index = stack[arg_stack_pos+1];
-                if(list_index>=lists.size()) error("list index "+to_string(get_index)+" out of range", program[func_pos]);
-                return list[get_index];
+                auto list = get_list(stack[arg_stack_pos], program[func_pos]);
+                auto entry = stack[arg_stack_pos+1];
+                if(entry>=list.len) error("list index out of bounds", program[func_pos]);
+                return list.ptr[entry];
             }
             case syntax::list: {
-                auto list_index = u64{lists.size()};
-                lists.emplace_back();
-                auto& list = lists[list_index];
                 assert(arg_stack_pos<=arg_stack_end);
-                list.reserve(arg_stack_end-arg_stack_pos);
+                auto n = arg_stack_end-arg_stack_pos;
+                auto ptr = (u64*)malloc(sizeof(u64)*n);
                 for(u64 pos=arg_stack_pos;pos<arg_stack_end;++pos)
-                    list.push_back(stack[pos]);
-                return list_index;
+                    ptr[pos] = stack[pos];
+                return register_list(ptr, n);
             }
             case syntax::ladd: {
                 ASSERT_SIZE(2);
-                auto list_index = u64{lists.size()};
-                lists.emplace_back();
-                auto& list = lists[list_index];
+                auto n = u64{0};
                 for(u64 pos=arg_stack_pos;pos<arg_stack_end;++pos) {
-                    auto list_index = stack[arg_stack_pos];
-                    if(list_index>=lists.size()) error("list #"+to_string(list_index)+" does not exist", program[func_pos]);
-                    auto& added_list = lists[list_index]; 
-                    list.reserve(list.size()+distance(added_list.begin(),added_list.end()));
-                    list.insert(list.end(),added_list.begin(),added_list.end());
+                    auto l = get_list(stack[pos], program[func_pos]);
+                    n = n+l.len;
                 }
-                return list_index;
+                auto pos = 0;
+                auto ptr = (u64*)malloc(sizeof(u64)*n);
+                for(u64 pos=arg_stack_pos;pos<arg_stack_end;++pos) {
+                    auto l = get_list(stack[pos], program[func_pos]);
+                    for(u64 idx;idx<l.len;++idx) 
+                        ptr[idx+pos] = l.ptr[idx];
+                    pos = pos+l.len;
+                }
+                return register_list(ptr, n);
             }
             case syntax::pow: ASSERT_SIZE(2); return fromreal(pow(toreal(stack[arg_stack_pos]), toreal(stack[arg_stack_pos+1])));
             case syntax::cos: ASSERT_SIZE(1); return fromreal(cos(toreal(stack[arg_stack_pos])));
@@ -274,9 +338,8 @@ inline u64 process_expression(const vector<Token>& program, const unordered_map<
             
             case syntax::llen: {
                 ASSERT_SIZE(1);
-                auto list_index = stack[arg_stack_pos];
-                if(list_index>=lists.size()) error("list #"+to_string(list_index)+" does not exist", program[func_pos]);
-                return lists[list_index].size();
+                auto l = get_list(stack[arg_stack_pos], program[func_pos]);
+                return l.len;
             }
             case syntax::slen: ASSERT_SIZE(1); return totoken(stack[arg_stack_pos]).size();
             case syntax::seq: ASSERT_SIZE(2); return totoken(stack[arg_stack_pos])==totoken(stack[arg_stack_pos]);
