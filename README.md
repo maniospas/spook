@@ -40,7 +40,7 @@ given the explanation for `|` above, that it does not need any further explainin
 Right? Here we do need some highlighting, but more on this in the future - if at all.
 
 ```cpp
-@dep "boring.oo"
+\dep "boring.oo"
 
 symbol ALWAYS = 1
 fn fib
@@ -119,6 +119,9 @@ Can happen to the best of us. Dare I introduce you... to superspook?
 Enable it per `\dep "superspook.oo"` and have fun. Like the example below.
 Read *syperspook.oo* to make sense of available symbol substitutions.
 
+
+<details><summary>Cursed program hidden - click here to show it.</summary>
+
 ```text
 \dep "superspook.oo"
 
@@ -140,11 +143,15 @@ Read *syperspook.oo* to make sense of available symbol substitutions.
         🐾 fib 30
     🍭 nprint result
 ```
+</details>
+<br><br>
 
 
 *Q: MOARE SPOOK!*
 
 Nobody stops you from using emojis as names. Like this:
+
+<details><summary>Cursed program hidden - click here to show it.</summary>
 
 ```
 \dep "superspook.oo"
@@ -165,6 +172,8 @@ Nobody stops you from using emojis as names. Like this:
     🍭 nprint 🐰 30
 ```
 
+</details>
+<br><br>
 
 *Q: Can I use this?*
 
