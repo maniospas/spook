@@ -1,0 +1,6 @@
+\dep "spook.oo"
+
+🏚️ main
+    🎃 mylist = list(1,2,3)
+    🎃 value = mylist.sslice(2,3).get(0)
+    | nprint value

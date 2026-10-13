@@ -240,7 +240,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
     }
     auto par_open = program[pos+1].id;
     if(pos+1<program.size()) {
-        bool is_par = par_open==syntax::lpar;
+        bool is_par = par_open==syntax::lpar && !program[pos+1].tag;
         auto func_name = local_id;
         auto func_pos = pos;
         auto arg_stack_end = arg_stack_pos;
@@ -251,6 +251,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
         if(is_par) ++pos; 
         while(true) {
             ++pos;
+            //if(pos>=program.size()) error("unexpected end of file3", program[program.size()-1]);
             auto next_val = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end);
             stack[arg_stack_end] = next_val;
             arg_stack_end++;
@@ -466,6 +467,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
 }
 
 u64 call_function(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64 name, u64 arg_stack_pos, u64 arg_stack_end, unordered_map<u64, u64>& globals, u64 error_token) {
+    //cout << "calling "+totoken(name)+"\n";
     auto vars = unordered_map<u64, u64>{};
     auto positer = func_positions.find(name);
     auto current_arg = arg_stack_pos;
@@ -553,8 +555,6 @@ u64 interpret(const vector<Token>& program) {
 }
 
 void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms, u64 depth) {
-    ++depth;
-    if(depth>10) error("more than 10 import levels - likely due to circular import: "+path);
     auto current_token = string{};
     auto file = ifstream{path};
     if(!file.is_open()) error("cannot open source: "+path);
@@ -574,7 +574,7 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
                         u16 tag = 0;
                         if(current_token.find("::")!=string::npos) {found_id = id(current_token);tag=tags::isglobal;}
                         if(!tag && current_token.find(".")==string::npos) try{ found_id = u64{stoull(current_token.c_str())}; tag=tags::isnat; } catch(...) {}
-                        if(!tag) try{ found_id = fromreal(stof(current_token.c_str())); tag=tags::isfloat; } catch(...) {}
+                        if(!tag && current_token.find(".")!=string::npos) try{ size_t pos=0;found_id = fromreal(stof(current_token.c_str(), &pos)); if(pos==current_token.size())tag=tags::isfloat;else error("cannot parse decimal number (use space to use dot after a natural) number: "+current_token, Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid}); } catch(...) {}
                         if(!tag) found_id = id(current_token);
                         program.push_back(Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid});
                         current_token = "";
@@ -585,8 +585,9 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
                 // if in string
                 in_string = false;
                 if(program.size()>=1 && program[program.size()-1].id==syntax::req) {
+                    if(depth>=10) error("more than 10 import levels - likely due to circular import: "+path, program[program.size()-1]);
                     program.pop_back();
-                    import(current_token, program, syms, depth);
+                    import(current_token, program, syms, depth+1);
                     current_token = "";
                     continue;
                 }
@@ -614,7 +615,7 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
                     u16 tag = 0;
                     if(current_token.find("::")!=string::npos) {found_id = id(current_token);tag=tags::isglobal;}
                     if(!tag && current_token.find(".")==string::npos) try{ found_id = u64{stoull(current_token.c_str())}; tag=tags::isnat; } catch(...) {}
-                    if(!tag) try{ found_id = fromreal(stof(current_token.c_str())); tag=tags::isfloat; } catch(...) {}
+                    if(!tag && current_token.find(".")!=string::npos) try{ size_t pos=0;found_id = fromreal(stof(current_token.c_str(), &pos)); if(pos==current_token.size())tag=tags::isfloat;else error("cannot parse decimal number (use space to use dot after a natural): "+current_token, Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid}); } catch(...) {}
                     if(!tag) found_id = id(current_token);
                     program.push_back(Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid});
                     current_token = "";
@@ -643,7 +644,7 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
             
             if(current_token.find("::")!=string::npos) {found_id = id(current_token);tag=tags::isglobal;}
             if(!tag && current_token.find(".")==string::npos) try{ found_id = u64{stoull(current_token.c_str())}; tag=tags::isnat; } catch(...) {}
-            if(!tag) try{ found_id = fromreal(stof(current_token.c_str())); tag=tags::isfloat;} catch(...) {}
+            if(!tag && current_token.find(".")!=string::npos) try{ size_t pos=0;found_id = fromreal(stof(current_token.c_str(), &pos)); if(pos==current_token.size())tag=tags::isfloat;else error("cannot parse decimal number (use space to use dot after a natural): "+current_token, Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid}); } catch(...) {}
             if(!tag) found_id = id(current_token);
             program.push_back(Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid});
             current_token = "";
@@ -659,15 +660,21 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
             program[i].id = found->second.id;
             program[i].tag = found->second.tag;
         }
-        if(program[i].id==syntax::req) error("dependency syntax shoud be \\dep followed by a string path", program[i]);
+        if(program[i].id==syntax::req) error("dependency syntax should be \\dep followed by a string path", program[i]);
         if(program[i].id==syntax::sym) {
             if(i+3>=program.size()) error("unexpected end of file", program[program.size()-1]);
             ++i;
+            if(program[i].tag) error("cannot define literal as symbol", program[i]);
             auto replacor = program[i].id;
             ++i;
             if(program[i].id!=syntax::eq) error("expecting equality in symbol decleration", program[i]);
             ++i;
-            syms[replacor] = program[i];
+            auto already_exists_replacor = syms.find(replacor);
+            if(already_exists_replacor!=syms.end() && (already_exists_replacor->second.id!=program[i].id || already_exists_replacor->second.tag!=program[i].tag)) error("symbol "+totoken(program[i].id)+" already defined as something else", program[i]);
+            auto already_exists = syms.find(program[i].id);
+            if(already_exists!=syms.end()) syms[replacor] = already_exists->second;
+            else syms[replacor] = program[i];
+
         }
     }
 }

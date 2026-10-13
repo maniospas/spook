@@ -1,0 +1,4 @@
+\dep "spook.oo"
+
+🏚️ main
+    | nprint 1 .nadd 1

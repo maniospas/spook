@@ -1,0 +1,10 @@
+\dep "spook.oo"
+
+🪦 always = 1
+👻 dummy
+    🕸️ path
+    | not exists path → write("test.txt", "my data")
+🏚️ main
+    🎃 path = "test.txt"
+    | dummy(path)
+    | sprint read path

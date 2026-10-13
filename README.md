@@ -11,38 +11,21 @@ Download *main.cpp* and compile it with your c++ compiler of choice. For example
 g++ -o spook main.cpp -O3
 ```
 
-## Example
-
 Our syntax is self-highlighting thanks to emoji colors! Just write spook in any text editor. Anyway, here is the mandatory badly-implemented recursive example. Functions are interpreted on-demand only.
 
 ```text
 # main.oo
-🏚️ globals  
-    🎃 always = 1
-    🎃 pi     = 3.141592
-    
+\dep "spook.oo"
+🪦 ALWAYS = 1          # symbol definition
 👻 fib
-    🕸️ n
-    🍭 nle(n,1) → n
-    🍭 globals::always → nadd(
-        fib|nsub(n,1),
-        fib|nsub(n,2)
+    🕸️ n               # argument
+    | nle(n,1) → n     # return n if condition is true
+    | ALWAYS → nadd(
+        fib nsub(n,1), # easy piping of one return without parentheses
+        fib nsub(n,2)
     )
-
 🏚️ main
-    # easy piping of one return
-    🍭 sprint|sadd("hello ", "world!")
-
-    # up to you to ensure correctness
-    🎃 mylist = lost(1.0,2,3)
-    🍭 fprint|get(mylist,0)
-    🍭 nprint|get(mylist,1)
-
-    # some math utilities
-    🍭 fprint|sin|fmul(globals::pi,0.5)
-
-    # custom functions
-    🍭 nprint|fib(30)
+    | nprint fib(30)
 ```
 
 Run this program per `./spook main.oo`.
@@ -55,12 +38,14 @@ Syntax is ridiculously easy. Any variable can be interpreted as any other type u
 
 **declarations**
 
+- **\dep "spook.oo"** brings in the spook dialect. You can create your own using different symbols.
 - **👻 function_name** starts a new function (there are no nested functions). Functions are like ghosts in that they are immaterial, get it?
 - **🕸️ argument_name** indicates the next function argument. Think of a web tangling the arguments as the stack tape goes through them.
 - **🎃 variable = value** sets a local variable name to the value computed by the right-hand-side expression. Pumpkins!
-- **🍭 condition_value → return_value** checks the condition by parsing its expression. If the condition evaluates to 0, the rest of the declaration is skipped. If it evaluates to non-zero, it parses the
-returned value expression and returns its outcome (prevents further statements in the function from running). Who doesn't like early returns, right? "Lick" the condition like a candy and check if it's in our taste. Can use this for sequential code when using functions that always return zero and hence need not have the arrow and return branch (conditions skip to the next declaration).
+- **| condition_value → return_value** checks the condition by parsing its expression. If the condition evaluates to 0, the rest of the declaration is skipped. If it evaluates to non-zero, it parses the
+returned value expression and returns its outcome (prevents further statements in the function from running). Who doesn't like early returns, right Can use this for sequential code when using functions that always return zero and hence need not have the arrow and return branch (conditions skip to the next declaration). See examples.
 - **🏚️ namespace_name** This is our haunted house. It starts a new namespace for variables (there are no nested functions or namespaces). It runs upon declaration, and becomes a system exit code if it returns a non-zero value. If the program is still alive and kickin, its variables can be accessed within expressions.
+- **🪦 variable = value** defines a global symbol. Use with care, though symbols cannot be over-written.
 
 **expressions**
 - Constants and local variables are expressions. Constants can be strings, nats, or floats.
@@ -100,7 +85,10 @@ Others:
 
 *Q: I didn't get spooked.*
 
-Can happen to the best of us.
+Can happen to the best of us. Dare I introduce you... to superspook?
+Enable it per `\dep "superspook.oo"` and have fun. Like this:
+
+
 
 *Q: Can I use this?*
 
@@ -131,20 +119,21 @@ Some advanced safety features may be added in the future.
 
 *Q: It's cumbersome to use emojis.*
 
-Right? But fun! In future versions
-you will be able to use the following symbol
-names instead, and there will be an auto-formatter
-for maximum spookiness:
+Right? But fun! You can use the textual versions of symbols if you must...
+Or define your own dialect! The spook.oo dialect definition is copied below:
 
 ```
-\fn 👻
-\let 🎃
-\arg 🕸️
-\sp 🏚️
-\do 🍭
-\permit 🕯️
-\del 🪦  (currently unused)
-\then →
+# spook.oo
+# Enables semi-spooky, semi-usable syntax.
+\sym 🪦 = \sym
+🪦 👻 = \fn
+🪦 🎃 = \let
+🪦 🕸️ = \arg
+🪦 🏚️ = \sp
+🪦 |  = \do
+🪦 →  = \then
+🪦 🧹 = \del
+🪦 🕯️ = \dep
 ```
 
 *Q. Nice slop, bro.*

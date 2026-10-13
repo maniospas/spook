@@ -1,0 +1,4 @@
+\dep "spook.oo"
+
+🏚️ main
+    | sprint exec "ls"
