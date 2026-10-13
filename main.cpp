@@ -96,6 +96,8 @@ namespace syntax {
     const u64 nstring = 72;
     const u64 fstring = 73;
     const u64 exists = 74;
+    const u64 sym = 75;
+    const u64 req = 76;
 }
 namespace tags {
     const u16 isnat = 1;
@@ -139,11 +141,11 @@ inline string totoken(u64 id) {
 }
 
 struct Token { u64 id; u16 tag; u16 row; u16 col; u16 fileid; };
-string_view get_string(u64 _meta, const Token& error_token);
+//string_view get_string(u64 _meta, const Token& error_token);
 void error(const string& description, const Token& tok) {
     cout<<"\e[0;31mERROR\e[0m "<<description<<"\n";
     auto endcol = tok.col;
-    auto filename = get_string(tok.fileid, tok);
+    auto filename = totoken(tok.fileid);
     cout<<"   \e[0;33mat\e[0m "<<filename<<" line "<<tok.row<<"\n";
     // s
     exit(1);
@@ -172,7 +174,7 @@ u64 register_string(const string& name) {
     assert(unpack(ret).start==0);
     return ret;
 }
-string_view get_string(u64 _meta, const Token& error_token) {
+inline string_view get_string(u64 _meta, const Token& error_token) {
     auto meta = unpack(_meta);
     if(meta.host>=strings.size()) error("not existing string index: "+to_string(meta.host), error_token);
     auto entry = strings[meta.host];
@@ -194,7 +196,7 @@ u64 register_list(u64* ptr, u64 n) {
 }
 
 struct ReturnList { u64* ptr; u64 len; };
-ReturnList get_list(u64 _meta, const Token& error_token) {
+inline ReturnList get_list(u64 _meta, const Token& error_token) {
     static_assert (sizeof(_Identifier) == sizeof(u64), "Identifier is not properly aligned.");
     auto meta = unpack(_meta);
     if(meta.host>=lists.size()) error("not existing list index: "+to_string(meta.host), error_token);
@@ -214,29 +216,45 @@ ReturnList get_list(u64 _meta, const Token& error_token) {
 #define ASSERT_SIZE(desired_size) if(arg_stack_end!=arg_stack_pos+desired_size)error("wrong number of input arguments to unpack in builtin function: "+totoken(func_name), program[error_token]);
 #define ASSERT_MINSIZE(desired_size) if(arg_stack_end<arg_stack_pos+desired_size)error("not enough input arguments to unpack in builtin function: "+totoken(func_name), program[error_token]);
 u64 call_function(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64 name, u64 arg_stack_pos, u64 arg_stack_end, unordered_map<u64, u64>& globals, u64 error_tokens);
-inline u64 process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos) {
+u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry);
+u64 process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos) {
+    auto ret = _process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_pos, nullptr);
+    while(pos<program.size() && program[pos].id==syntax::dot) {
+        ++pos;
+        ret = _process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_pos, &ret);
+    }
+    return ret;
+}
+u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry) {
     if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
     auto local_id = program[pos].id;
-    if(program[pos].tag==tags::isglobal) {
-        auto local = globals.find(local_id);
-        if(local!=globals.end()) {++pos; return local->second;}
-        error("failed to find namespace variable: "+totoken(local_id), program[pos]);
+    if(!curry) {
+        if(program[pos].tag==tags::isglobal) {
+            auto local = globals.find(local_id);
+            if(local!=globals.end()) {++pos; return local->second;}
+            error("failed to find namespace variable: "+totoken(local_id), program[pos]);
+        }
+        if(program[pos].tag) {++pos; return local_id;}
+        auto local = vars.find(local_id);
+        if(local!=vars.end()) {++pos; return local->second;}
     }
-    if(program[pos].tag) {++pos; return local_id;}
-    auto local = vars.find(local_id);
-    if(local!=vars.end()) {++pos; return local->second;}
     auto par_open = program[pos+1].id;
-    if(pos+1<program.size() && (par_open==syntax::lpar || par_open==syntax::cont)) {
+    if(pos+1<program.size()) {
+        bool is_par = par_open==syntax::lpar;
         auto func_name = local_id;
         auto func_pos = pos;
         auto arg_stack_end = arg_stack_pos;
-        ++pos; 
+        if(curry) {
+            stack[arg_stack_pos] = *curry;
+            arg_stack_end++;
+        }
+        if(is_par) ++pos; 
         while(true) {
             ++pos;
             auto next_val = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end);
             stack[arg_stack_end] = next_val;
             arg_stack_end++;
-            if(par_open==syntax::cont) break;
+            if(!is_par) break;
             if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
             auto pos_id = program[pos].id;
             if(pos_id==syntax::rpar) {++pos;break;}
@@ -300,7 +318,7 @@ inline u64 process_expression(const vector<Token>& program, const unordered_map<
                 ASSERT_SIZE(2);
                 auto list = get_list(stack[arg_stack_pos], program[func_pos]);
                 auto entry = stack[arg_stack_pos+1];
-                if(entry>=list.len) error("list index out of bounds", program[func_pos]);
+                if(entry>=list.len) error("list index "+to_string(entry)+" outside of list length "+to_string(list.len), program[func_pos]);
                 return list.ptr[entry];
             }
             case syntax::list: {
@@ -349,6 +367,37 @@ inline u64 process_expression(const vector<Token>& program, const unordered_map<
             case syntax::seq: ASSERT_SIZE(2); return get_string(stack[arg_stack_pos], program[func_pos])==get_string(stack[arg_stack_pos], program[func_pos]);
             case syntax::sneq: ASSERT_SIZE(2); return get_string(stack[arg_stack_pos], program[func_pos])==get_string(stack[arg_stack_pos], program[func_pos]);
             case syntax::nstring: ASSERT_SIZE(1); return register_string(to_string(stack[arg_stack_pos]));
+            case syntax::split: {
+                ASSERT_SIZE(2); 
+                auto data = get_string(stack[arg_stack_pos], program[func_pos]);
+                auto needle = get_string(stack[arg_stack_pos+1], program[func_pos]);
+                return 0;
+            }
+            case syntax::sslice: {
+                ASSERT_SIZE(3); 
+                auto _meta = stack[arg_stack_pos];
+                auto meta = unpack(_meta);
+                auto data = get_string(_meta, program[func_pos]);
+                auto start = stack[arg_stack_pos+1];
+                auto end = stack[arg_stack_pos+2];
+                if(start>data.size()) error("slice start "+to_string(start)+" out of bounds "+to_string(data.size()), program[func_pos]);
+                if(end<start) error("slice end less than start (must be exactly equal for empty string)", program[func_pos]);
+                if(end>data.size()) error("slice end out of bounds)", program[func_pos]);
+                return pack(meta.host, tou16(u64{meta.start}+start), tou16(end-start+1));
+            }
+            case syntax::lslice: {
+                ASSERT_SIZE(3); 
+                auto _meta = stack[arg_stack_pos];
+                auto meta = unpack(_meta);
+                auto data = get_list(stack[arg_stack_pos], program[func_pos]);
+                auto start = stack[arg_stack_pos+1];
+                auto end = stack[arg_stack_pos+2];
+                if(start>data.len) error("slice start "+to_string(start)+" out of bounds "+to_string(data.len), program[func_pos]);
+                if(end<start) error("slice end less than start (must be exactly equal for empty list)", program[func_pos]);
+                if(end>data.len) error("slice end out of bounds)", program[func_pos]);
+                return pack(meta.host, tou16(u64{meta.start}+start), tou16(end-start+1));
+
+            }
             case syntax::fstring: ASSERT_SIZE(1); return register_string(to_string(toreal(stack[arg_stack_pos])));
             case syntax::exists: ASSERT_SIZE(1); return filesystem::exists(get_string(stack[arg_stack_pos], program[func_pos]));
             case syntax::write: {
@@ -471,7 +520,7 @@ u64 call_function(const vector<Token>& program, const unordered_map<u64, u64>& f
             ++pos;
             continue;
         }
-        error("unexpected syntax token: "+totoken(current_id));
+        error("unexpected syntax token: "+totoken(current_id), program[pos]);
     }
     if(isnamespace) for(const auto& [k,v]:vars) globals[id(tokens[name]+"::"+tokens[k])] = v;
     return 0;
@@ -485,9 +534,13 @@ u64 interpret(const vector<Token>& program) {
     for(size_t i=0;i<program.size()-1;++i) {
         auto current_pos = i;
         auto current_id = program[i].id;
+        if(current_id==syntax::sym) {
+            i += 3;
+            continue;
+        }
         if(current_id!=syntax::fn && current_id!=syntax::names) continue;
         ++i;
-        auto last_func_name = program[i].id;;
+        auto last_func_name = program[i].id;
         if(func_positions.find(last_func_name)!=func_positions.end()) error("multiple definitions of: "+totoken(last_func_name), program[i]);
         func_positions[last_func_name] = i;
         if(current_id!=syntax::names) continue; // directly run namespace
@@ -499,93 +552,13 @@ u64 interpret(const vector<Token>& program) {
     return 0;
 }
 
-int main(int argc, const char** argv) {
-    auto data = vector<f64>{};
-    if(argc<=1) error("missing source file");
-    auto path = string{argv[1]};
-    auto file = ifstream{"main.oo"};
-    if(!file.is_open()) error("cannot open source: "+path);
-
-    // TOKENIZE
-    auto program = vector<Token>{};
+void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms, u64 depth) {
+    ++depth;
+    if(depth>10) error("more than 10 import levels - likely due to circular import: "+path);
     auto current_token = string{};
+    auto file = ifstream{path};
+    if(!file.is_open()) error("cannot open source: "+path);
     string line;
-    id("=");
-    id("(");
-    id(")");
-    id("[");
-    id("]");
-    id(",");
-    id(".");
-    id("{");
-    id("}");
-    id("|");
-    id("🎃");
-    id("👻");
-    id("🕸️");
-    id("🧹");
-    id("🍭");//if
-    id("nadd");
-    id("nmul");
-    id("nsub");
-    id("ndiv");
-    id("fadd");
-    id("fmul");
-    id("fsub");
-    id("fdiv");
-    id("not");
-    id("nle");
-    id("nge");
-    id("nlt");
-    id("ngt");
-    id("neq");
-    id("nneq");
-    id("fle");
-    id("fge");
-    id("flt");
-    id("fgt");
-    id("feq");
-    id("fneq");
-    id("nprint");
-    id("fprint");
-    id("🏚️"); // namespace
-    id("ncast");
-    id("fcast");
-    id("sprint");
-    id("sadd");
-    id("→"); // then
-    id("list");
-    id("get");
-    id("ladd");
-    id("len");
-    id("exec");
-    id("🕯️"); // permit
-    id("sin");
-    id("cos");
-    id("tan");
-    id("exp");
-    id("pow");
-    id("acos");
-    id("asin");
-    id("atan");
-    id("cosh");
-    id("sinh");
-    id("tanh");
-    id("read");
-    id("slen");
-    id("split");
-    id("sslice");
-    id("lslice");
-    id("sfind");
-    id("seq");
-    id("sneq");
-    id("write");
-    id("nconvert");
-    id("fconvert");
-    id("nstring");
-    id("fstring");
-    id("exists");
-
     auto fileid = tou16(id(path)); // file ids should be placed near the start 
     auto row = u16{0};
     while(getline(file, line)) {
@@ -611,6 +584,12 @@ int main(int argc, const char** argv) {
                 }
                 // if in string
                 in_string = false;
+                if(program.size()>=1 && program[program.size()-1].id==syntax::req) {
+                    program.pop_back();
+                    import(current_token, program, syms, depth);
+                    current_token = "";
+                    continue;
+                }
                 auto found_id = register_string(current_token);
                 auto tag=tags::isstring;
                 program.push_back(Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid});
@@ -621,7 +600,7 @@ int main(int argc, const char** argv) {
                 current_token += c;
                 continue;
             }
-            if(c=='=' || c=='|' || c=='(' || c==')' || c=='[' || c==']' || c==',' || c=='{' || c=='}' || c==' ' || c=='\t' || c=='#' || col>line.size()) {
+            if(c=='=' || c=='|' || c=='(' || c==')' || c=='[' || c==']' || c==',' || c=='{' || c=='}' || c==' ' || c=='.' || c=='\t' || c=='#' || col>line.size()) {
                 if(c=='.') {
                     bool valid_number_so_far = false;
                     try{ stoull(current_token.c_str()); valid_number_so_far=true; } catch(...) {}
@@ -674,6 +653,111 @@ int main(int argc, const char** argv) {
     file.close();
     assert(current_token.size()==0);
 
-    // PROCESS TOKENS
+    for(size_t i=0;i<program.size();++i) {
+        auto found = syms.find(program[i].id);
+        if(found!=syms.end()) {
+            program[i].id = found->second.id;
+            program[i].tag = found->second.tag;
+        }
+        if(program[i].id==syntax::req) error("dependency syntax shoud be \\dep followed by a string path", program[i]);
+        if(program[i].id==syntax::sym) {
+            if(i+3>=program.size()) error("unexpected end of file", program[program.size()-1]);
+            ++i;
+            auto replacor = program[i].id;
+            ++i;
+            if(program[i].id!=syntax::eq) error("expecting equality in symbol decleration", program[i]);
+            ++i;
+            syms[replacor] = program[i];
+        }
+    }
+}
+
+int main(int argc, const char** argv) {
+    auto data = vector<f64>{};
+    if(argc<=1) error("missing source file");
+    auto path = string{argv[1]};
+
+    // TOKENIZE
+    id("=");
+    id("(");
+    id(")");
+    id("[");
+    id("]");
+    id(",");
+    id(".");
+    id("{");
+    id("}");
+    id("|");
+    id("\\let");
+    id("\\fn");
+    id("\\arg");
+    id("\\clean");
+    id("\\do");//if
+    id("nadd");
+    id("nmul");
+    id("nsub");
+    id("ndiv");
+    id("fadd");
+    id("fmul");
+    id("fsub");
+    id("fdiv");
+    id("not");
+    id("nle");
+    id("nge");
+    id("nlt");
+    id("ngt");
+    id("neq");
+    id("nneq");
+    id("fle");
+    id("fge");
+    id("flt");
+    id("fgt");
+    id("feq");
+    id("fneq");
+    id("nprint");
+    id("fprint");
+    id("\\sp"); // namespace
+    id("ncast");
+    id("fcast");
+    id("sprint");
+    id("sadd");
+    id("\\then"); // then
+    id("list");
+    id("get");
+    id("ladd");
+    id("len");
+    id("exec");
+    id("\\permit"); // permit
+    id("sin");
+    id("cos");
+    id("tan");
+    id("exp");
+    id("pow");
+    id("acos");
+    id("asin");
+    id("atan");
+    id("cosh");
+    id("sinh");
+    id("tanh");
+    id("read");
+    id("slen");
+    id("split");
+    id("sslice");
+    id("lslice");
+    id("sfind");
+    id("seq");
+    id("sneq");
+    id("write");
+    id("nconvert");
+    id("fconvert");
+    id("nstring");
+    id("fstring");
+    id("exists");
+    id("\\sym");
+    id("\\dep"); // import
+
+    auto program = vector<Token>{};
+    auto syms = unordered_map<u64,Token>{};
+    import(path, program, syms, 0);
     return interpret(program);
 }

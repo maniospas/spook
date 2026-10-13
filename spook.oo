@@ -1,0 +1,10 @@
+# Enables semi-spooky, semi-usable syntax.
+\sym 🪦 = \sym
+🪦 👻 = \fn
+🪦 🎃 = \let
+🪦 🕸️ = \arg
+🪦 🏚️ = \sp
+🪦 |  = \do
+🪦 →  = \then
+🪦 🧹 = \del
+🪦 🕯️ = \dep

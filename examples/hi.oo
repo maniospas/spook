@@ -1,0 +1,5 @@
+\dep "🎃"
+
+🪦 hello = "hello world!"
+🏚️ main
+    | sprint hello
