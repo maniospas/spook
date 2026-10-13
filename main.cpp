@@ -259,7 +259,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
             if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
             auto pos_id = program[pos].id;
             if(pos_id==syntax::rpar) {++pos;break;}
-            if(pos_id!=syntax::comma) error("expecting comma or closing parenthesis by found: "+totoken(pos_id), program[pos]);
+            if(pos_id!=syntax::comma) error("expecting comma or closing parenthesis but found: "+totoken(pos_id), program[pos]);
         }
         switch(func_name) {
             case syntax::nadd: {

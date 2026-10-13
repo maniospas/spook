@@ -11,21 +11,26 @@ Download *main.cpp* and compile it with your c++ compiler of choice. For example
 g++ -o spook main.cpp -O3
 ```
 
-Our syntax is self-highlighting thanks to emoji colors! Just write spook in any text editor. Anyway, here is the mandatory badly-implemented recursive example. Functions are interpreted on-demand only.
+You will also need the standard library file *spook.oo*
+to get access to the spooky syntax. You can define your
+own syntax, but this is a self-highlighting emoji theme
+that looks good in any text editor with unicode support.
+Anyway, here is the mandatory badly-implemented recursive 
+example.
 
 ```text
 # main.oo
 \dep "spook.oo"
 🪦 ALWAYS = 1          # symbol definition
-👻 fib
+👻 fib                 # function
     🕸️ n               # argument
-    | nle(n,1) → n     # return n if condition is true
-    | ALWAYS → nadd(
-        fib nsub(n,1), # easy piping of one return without parentheses
-        fib nsub(n,2)
+    | n.nle 1 → n      # return n if condition is true
+    | ALWAYS  → nadd(  # proper function call
+        fib n.nsub 1,  # call one return without parentheses, dot pipes a first argument
+        fib n.nsub 2
     )
 🏚️ main
-    | nprint fib(30)
+    | nprint fib(30)   # just run an always-zero outcome
 ```
 
 Run this program per `./spook main.oo`.
@@ -34,7 +39,11 @@ Run this program per `./spook main.oo`.
 
 # Syntax
 
-Syntax is ridiculously easy. Any variable can be interpreted as any other type using its byte representation into `u64`, where things like strings and arrays are tracked via their addressese into safely accessible buffer; you may get errors but not segfaults. 
+Syntax is basically a list of declarations organized
+into namespaces and functions. Any variable can be interpreted 
+as any other type using its byte representation into `u64`, 
+where things like strings and arrays are tracked via their 
+addresses into safely accessible buffer; you may get errors but not segfaults. 
 
 **declarations**
 
@@ -86,15 +95,37 @@ Others:
 *Q: I didn't get spooked.*
 
 Can happen to the best of us. Dare I introduce you... to superspook?
-Enable it per `\dep "superspook.oo"` and have fun. Like this:
+Enable it per `\dep "superspook.oo"` and have fun. Like the example below.
+Read *syperspook.oo* to make sense of available symbol substitutions.
 
+```text
+\dep "superspook.oo"
+
+🏚️ globs
+    🎃 always
+        🐾 1
+👻 fib
+    🕸️ n
+    🍭 n.nle 1 
+        🩸 n
+    🍭 globs::always  
+        🩸 nadd
+            🌔 fib n.nsub 1
+            🦴 fib n.nsub 2
+            🌒
+
+🏚️ main
+    🎃 result 
+        🐾 fib 30
+    🍭 nprint result
+```
 
 
 *Q: Can I use this?*
 
 Sure, if you want some simple file processing
 or system scripting. Comparably fast to
-Python and its executable is <128KB. Can 
+Python and its executable is <200KB. Can 
 call your system's curl and stuff via 
 the `exec` command.
 
@@ -106,7 +137,7 @@ the memo that computers run on only 0 and 1?
 There's not even a guarantee on whether
 a value represents a primitive or an array!
 You will make do with some begrudgingly added
-errors for out-of-memory or use-after-after.
+errors for out-of-memory or use-after-free.
 
 Things might change. Or might not.
 
