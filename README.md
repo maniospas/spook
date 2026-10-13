@@ -121,6 +121,30 @@ Read *syperspook.oo* to make sense of available symbol substitutions.
 ```
 
 
+*Q: MOARE SPOOK!*
+
+Nobody stops you from using emojis as names. Like this:
+
+```
+\dep "superspook.oo"
+
+🏚️ ⭐
+    🎃 ⭐ 🐾 1
+👻 🐰
+    🕸️ 🧺
+    🍭 🧺.nle 1 
+        🩸 🧺
+    🍭 ⭐::⭐
+        🩸 nadd
+            🌔 🐰 🧺.nsub 1
+            🦴 🐰 🧺.nsub 2
+            🌒
+
+🏚️ main
+    🍭 nprint 🐰 30
+```
+
+
 *Q: Can I use this?*
 
 Sure, if you want some simple file processing
