@@ -35,6 +35,27 @@ example.
 
 Run this program per `./spook main.oo`.
 
+The syntax can be reconfigured. Here's a version with boring syntax. I hope,
+given the explanation for `|` above, that it does not need any further explaining.
+Right?
+
+```text
+\dep "boring.oo"
+
+symbol ALWAYS = 1
+fn fib 
+    arg n
+    | n.nle 1 then n
+    | ALWAYS  then nadd(
+        fib n.nsub 1,
+        fib n.nsub 2
+    )
+
+namespace main
+    let result = fib 30
+    | nprint result
+
+```
 
 
 # Syntax

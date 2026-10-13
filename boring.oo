@@ -1,0 +1,11 @@
+# spook.oo
+# Enables semi-spooky, semi-usable syntax.
+\sym symbol=\sym
+symbol fn = \fn
+symbol let = \let
+symbol arg = \arg
+symbol namespace = \sp
+symbol | = \do
+symbol then  = \then
+symbol del = \del
+symbol 🕯️ = \dep
