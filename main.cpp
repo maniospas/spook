@@ -139,10 +139,11 @@ inline string totoken(u64 id) {
 }
 
 struct Token { u64 id; u16 tag; u16 row; u16 col; u16 fileid; };
+string_view get_string(u64 _meta, const Token& error_token);
 void error(const string& description, const Token& tok) {
     cout<<"\e[0;31mERROR\e[0m "<<description<<"\n";
     auto endcol = tok.col;
-    auto filename = totoken(tok.fileid);
+    auto filename = get_string(tok.fileid, tok);
     cout<<"   \e[0;33mat\e[0m "<<filename<<" line "<<tok.row<<"\n";
     // s
     exit(1);
@@ -166,7 +167,10 @@ u64 register_string(const string& name) {
         ptr[index] = name[index];
     auto pos = strings.size();
     strings.push_back(StringEntry{.ptr=ptr, .refcount=1, .size=tou32(n)});
-    return pack(pos,0,0);
+    auto ret = pack(pos,0,0);
+    assert(unpack(ret).host==pos);
+    assert(unpack(ret).start==0);
+    return ret;
 }
 string_view get_string(u64 _meta, const Token& error_token) {
     auto meta = unpack(_meta);
@@ -175,11 +179,11 @@ string_view get_string(u64 _meta, const Token& error_token) {
     if(!entry.ptr) error("no string exists anymore at index: "+to_string(meta.host), error_token);
     auto start = u64{meta.start};
     auto len = u64{meta.len_plus_one};
-    if(start>entry.size) error("substring start is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start), error_token);
+    if(start>entry.size) error("substring start is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start)+" but the total length is "+to_string(entry.size), error_token);
     if(!len) len = entry.size-start;
     else {
         len = len-1;
-        if(start+len>entry.size) error("substring is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start)+" and length "+to_string(len), error_token);
+        if(start+len>entry.size) error("substring is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start)+" and length "+to_string(len)+" but the total length is "+to_string(entry.size), error_token);
     }
     return string_view(entry.ptr+start, len);
 }
@@ -284,13 +288,13 @@ inline u64 process_expression(const vector<Token>& program, const unordered_map<
             case syntax::fprint: ASSERT_SIZE(1); cout<<toreal(stack[arg_stack_pos])<<"\n"; return 0;
             case syntax::ncast: ASSERT_SIZE(1); return toreal(stack[arg_stack_pos]);
             case syntax::fcast: ASSERT_SIZE(1); return fromreal(stack[arg_stack_pos]);
-            case syntax::sprint: ASSERT_SIZE(1); cout<<totoken(stack[arg_stack_pos])<<"\n"; return 0;
+            case syntax::sprint: ASSERT_SIZE(1); cout<<get_string(stack[arg_stack_pos], program[func_pos])<<"\n"; return 0;
             case syntax::sadd: {
                 ASSERT_MINSIZE(2); 
-                auto combined = totoken(stack[arg_stack_pos])+totoken(stack[arg_stack_pos+1]);
+                auto combined = string{get_string(stack[arg_stack_pos], program[func_pos])}+string{get_string(stack[arg_stack_pos+1], program[func_pos])};
                 for(auto pos=arg_stack_pos+2;pos<arg_stack_end;++pos)
-                    combined += totoken(stack[pos]);
-                return id(combined);
+                    combined += string{get_string(stack[pos], program[func_pos])};
+                return register_string(combined);
             }
             case syntax::lget: {
                 ASSERT_SIZE(2);
@@ -341,17 +345,17 @@ inline u64 process_expression(const vector<Token>& program, const unordered_map<
                 auto l = get_list(stack[arg_stack_pos], program[func_pos]);
                 return l.len;
             }
-            case syntax::slen: ASSERT_SIZE(1); return totoken(stack[arg_stack_pos]).size();
-            case syntax::seq: ASSERT_SIZE(2); return totoken(stack[arg_stack_pos])==totoken(stack[arg_stack_pos]);
-            case syntax::sneq: ASSERT_SIZE(2); return totoken(stack[arg_stack_pos])==totoken(stack[arg_stack_pos]);
-            case syntax::nstring: ASSERT_SIZE(1); return id(to_string(stack[arg_stack_pos]));
-            case syntax::fstring: ASSERT_SIZE(1); return id(to_string(toreal(stack[arg_stack_pos])));
-            case syntax::exists: ASSERT_SIZE(1); return filesystem::exists(totoken(stack[arg_stack_pos]));
+            case syntax::slen: ASSERT_SIZE(1); return get_string(stack[arg_stack_pos], program[func_pos]).size();
+            case syntax::seq: ASSERT_SIZE(2); return get_string(stack[arg_stack_pos], program[func_pos])==get_string(stack[arg_stack_pos], program[func_pos]);
+            case syntax::sneq: ASSERT_SIZE(2); return get_string(stack[arg_stack_pos], program[func_pos])==get_string(stack[arg_stack_pos], program[func_pos]);
+            case syntax::nstring: ASSERT_SIZE(1); return register_string(to_string(stack[arg_stack_pos]));
+            case syntax::fstring: ASSERT_SIZE(1); return register_string(to_string(toreal(stack[arg_stack_pos])));
+            case syntax::exists: ASSERT_SIZE(1); return filesystem::exists(get_string(stack[arg_stack_pos], program[func_pos]));
             case syntax::write: {
                 ASSERT_SIZE(2); 
-                auto path = totoken(stack[arg_stack_pos]);
+                auto path = string{get_string(stack[arg_stack_pos], program[func_pos])};
                 if(filesystem::exists(path)) error("file already exists: "+path, program[func_pos]);
-                auto content = totoken(stack[arg_stack_pos+1]);
+                auto content = get_string(stack[arg_stack_pos+1], program[func_pos]);
                 auto out = ofstream{path};
                 out << content;
                 out.close();
@@ -361,15 +365,15 @@ inline u64 process_expression(const vector<Token>& program, const unordered_map<
                 auto ret = string{};
                 if(arg_stack_end==arg_stack_pos) {
                     cin>>ret;
-                    return id(ret);
+                    return register_string(ret);
                 }
                 ASSERT_SIZE(1); 
-                auto path = totoken(stack[arg_stack_pos]);
+                auto path = string{get_string(stack[arg_stack_pos], program[func_pos])};
                 error_code ec;
                 if(filesystem::is_directory(path, ec)) {
                     for(const auto & entry : filesystem::directory_iterator(path))
                         ret += entry.path().c_str()+string{"\n"};
-                    return id(ret);
+                    return register_string(ret);
                 }
                 auto file = ifstream{path};
                 if (!file.is_open()) error("file does not exist: "+path, program[func_pos]);
@@ -377,30 +381,32 @@ inline u64 process_expression(const vector<Token>& program, const unordered_map<
                 while (getline(file, line)) 
                     ret += line+"\n";
                 file.close();
-                return id(ret);
+                return register_string(ret);
             }
             case syntax::nconvert: {
                 ASSERT_SIZE(1); 
                 u64 ret = 0;
-                try{ret = stoull(totoken(stack[arg_stack_pos]));}catch(...){error("failed to convert to nat: "+totoken(stack[arg_stack_pos]), program[func_pos]);}
+                auto val = get_string(stack[arg_stack_pos], program[func_pos]);
+                try{ret = stoull(string{val});}catch(...){error("failed to convert to nat: "+totoken(stack[arg_stack_pos]), program[func_pos]);}
                 return ret;
             }
             case syntax::fconvert: {
                 ASSERT_SIZE(1); 
                 u64 ret = 0;
-                try{ret = stof(totoken(stack[arg_stack_pos]));}catch(...){error("failed to convert to float: "+totoken(stack[arg_stack_pos]), program[func_pos]);}
+                auto val = get_string(stack[arg_stack_pos], program[func_pos]);
+                try{ret = stof(string{val});}catch(...){error("failed to convert to float: "+totoken(stack[arg_stack_pos]), program[func_pos]);}
                 return ret;
             }
             case syntax::exec: {
                 ASSERT_SIZE(1);
-                auto command = totoken(stack[arg_stack_pos]);
+                auto command = get_string(stack[arg_stack_pos], program[func_pos]);
                 array<char, 128> buffer;
                 auto result = string{};
-                unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+                unique_ptr<FILE, decltype(&pclose)> pipe(popen(string{command}.c_str(), "r"), pclose);
                 if(!pipe) error("failed to open process", program[func_pos]);
                 while(fgets(buffer.data(), static_cast<int>(buffer.size()), pipe.get()) != nullptr) 
                     result += buffer.data();
-                return id(result);
+                return register_string(result);
             }
             default: break;
         }
@@ -605,7 +611,7 @@ int main(int argc, const char** argv) {
                 }
                 // if in string
                 in_string = false;
-                auto found_id = id(current_token);
+                auto found_id = register_string(current_token);
                 auto tag=tags::isstring;
                 program.push_back(Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid});
                 current_token = "";
