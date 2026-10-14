@@ -10,7 +10,7 @@ fn norm
     let y = p.get(pair::y)
     let x2 = x.fmul x
     let y2 = y.fmul y
-    | bool::true then fadd(x,y).pow(0.5)
+    | bool::true then fadd(x2,y2).pow(0.5)
 
 sp main
     let p = list(1.0,2.0)

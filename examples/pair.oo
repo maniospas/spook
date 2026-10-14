@@ -1,8 +1,8 @@
 \dep "spook.oo"
 
 🏚️ pair
-    🎃 x = 0
-    🎃 y = 1
+    🎃 x = 0 # type "float"
+    🎃 y = 1 # type "float"
     
 👻  norm
     🕸️ p
@@ -10,7 +10,7 @@
     🎃 y = p.get(pair::y)
     🎃 x2 = x.fmul x
     🎃 y2 = y.fmul y
-    | bool::true → fadd(x,y).pow(0.5)
+    | bool::true → fadd(x2,y2).pow(0.5)
 
 🏚️ main
     🎃 p = list(1.0,2.0)
