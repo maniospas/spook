@@ -1,0 +1,17 @@
+\dep "boring.oo"
+
+sp pair
+    let x = 0
+    let y = 1
+    
+fn norm
+    arg p
+    let x = p.get(pair::x)
+    let y = p.get(pair::y)
+    let x2 = x.fmul x
+    let y2 = y.fmul y
+    | bool::true then fadd(x,y).pow(0.5)
+
+sp main
+    let p = list(1.0,2.0)
+    | nprint norm p

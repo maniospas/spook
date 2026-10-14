@@ -21,7 +21,7 @@ example.
 ```text
 # main.oo
 \dep "spook.oo"
-🪦 ALWAYS = 1          # symbol definition
+🪦 ALWAYS = bool::true # symbol definition
 👻 fib                 # function
     🕸️ n               # argument
     | n.nle 1 → n      # return n if condition is true
@@ -42,11 +42,10 @@ Right? Here we do need some highlighting, but more on this in the future - if at
 ```cpp
 \dep "boring.oo"
 
-symbol ALWAYS = 1
 fn fib
     arg n
     | n.nle 1 then n
-    | ALWAYS  then nadd(
+    | bool::true then nadd(
         fib n.nsub 1,
         fib n.nsub 2
     )
@@ -125,14 +124,11 @@ Read *syperspook.oo* to make sense of available symbol substitutions.
 ```text
 \dep "superspook.oo"
 
-🏚️ globs
-    🎃 always
-        🐾 1
 👻 fib
     🕸️ n
     🍭 n.nle 1 
         🩸 n
-    🍭 globs::always  
+    🍭 bool::true 
         🩸 nadd
             🌔 fib n.nsub 1
             🦴 fib n.nsub 2
@@ -157,7 +153,7 @@ Nobody stops you from using emojis as names. Like this:
 \dep "superspook.oo"
 
 🏚️ ⭐
-    🎃 ⭐ 🐾 1
+    🎃 ⭐ 🐾 bool::true
 👻 🐰
     🕸️ 🧺
     🍭 🧺.nle 1 
@@ -187,13 +183,20 @@ the `exec` command.
 
 Type system? What type system? Didn't you get
 the memo that computers run on only 0 and 1?
-
 There's not even a guarantee on whether
 a value represents a primitive or an array!
-You will make do with some begrudgingly added
-errors for out-of-memory or use-after-free.
 
-Things might change. Or might not.
+BUT! There are proper memory safety errors,
+plus a simple analysis to identify obvious type
+issues. Actually, this analysis will only 
+leave unchecked the point where values are offloaded
+from lists and complex recursive schemas.
+
+For example, try to use
+*fprint* to print the outcome of a *fib* example
+and you will see a nice . 
+In case where values are uncertain, you will
+have to rely to good-old crashes.
 
 *Q: I see file operations. Are spook programs gonna wreck my PC?*
 

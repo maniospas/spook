@@ -104,6 +104,10 @@ namespace tags {
     const u16 isfloat = 2;
     const u16 isstring = 3;
     const u16 isglobal = 4;
+    const u16 islist = 5;   // only used for verification
+    const u16 isbool = 6;   // only used for verification
+    const u16 isnever = 7;   // only used for verification
+    const u64 calling_tag = 8;   // only used for verification - this is the maximum of this enumeration
 }
 
 struct ListEntry { u64* ptr; u32 refcount; u32 size; };
@@ -327,7 +331,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
                 auto n = arg_stack_end-arg_stack_pos;
                 auto ptr = (u64*)malloc(sizeof(u64)*n);
                 for(u64 pos=arg_stack_pos;pos<arg_stack_end;++pos)
-                    ptr[pos] = stack[pos];
+                    ptr[pos-arg_stack_pos] = stack[pos];
                 return register_list(ptr, n);
             }
             case syntax::ladd: {
@@ -510,9 +514,9 @@ u64 call_function(const vector<Token>& program, const unordered_map<u64, u64>& f
             continue;
         }
         if(current_id==syntax::arg) {
-            if(pos>=program.size()) return 0;//
+            //if(pos>=program.size()) return 0;//
             if(pos+1>=program.size()) error("unexpected end of file");
-            if(isnamespace) error("namespaces cannot have arguments");
+            if(isnamespace) error("namespaces cannot have arguments", program[pos]);
             ++pos;
             auto arg_name = program[pos].id;
             if(program[pos].tag==tags::isglobal) error("cannot set global variable as argument: "+totoken(arg_name), program[pos]);
@@ -548,6 +552,363 @@ u64 interpret(const vector<Token>& program) {
         if(current_id!=syntax::names) continue; // directly run namespace
         if(current_id==syntax::names) {
             last_return = call_function(program, func_positions, last_func_name, 0, 0, globals, current_pos);
+            if(last_return!=0) return last_return;
+        }
+    }
+    return 0;
+}
+
+
+u64 verify_function(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64 name, u64 arg_stack_pos, u64 arg_stack_end, unordered_map<u64, u64>& globals, u64 error_tokens, unordered_map<u64, u64>& func_tags);
+u64 _verify_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry, unordered_map<u64, u64>& func_tags);
+u64 verify_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, unordered_map<u64, u64>& func_tags) {
+    auto ret = _verify_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_pos, nullptr, func_tags);
+    while(pos<program.size() && program[pos].id==syntax::dot) {
+        ++pos;
+        ret = _verify_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_pos, &ret, func_tags);
+    }
+    return ret;
+}
+bool match(u64 tag1, u64 tag2) {
+    if(!tag1) return true;
+    if(!tag2) return true;
+    return tag1==tag2;
+}
+
+u64 _verify_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry, unordered_map<u64, u64>& func_tags) {
+    if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
+    auto local_id = program[pos].id;
+    if(!curry) {
+        if(program[pos].tag==tags::isglobal) {
+            auto local = globals.find(local_id);
+            if(local!=globals.end()) {++pos; return local->second;}
+            error("failed to find namespace variable: "+totoken(local_id), program[pos]);
+        }
+        if(program[pos].tag) {auto pos_tag = program[pos].tag;++pos; return pos_tag;}
+        auto local = vars.find(local_id);
+        if(local!=vars.end()) {++pos; return local->second;}
+    }
+    auto par_open = program[pos+1].id;
+    if(pos+1<program.size()) {
+        bool is_par = par_open==syntax::lpar && !program[pos+1].tag;
+        auto func_name = local_id;
+        auto func_pos = pos;
+        auto arg_stack_end = arg_stack_pos;
+        if(curry) {
+            stack[arg_stack_pos] = *curry;
+            arg_stack_end++;
+        }
+        if(is_par) ++pos; 
+        while(true) {
+            ++pos;
+            //if(pos>=program.size()) error("unexpected end of file3", program[program.size()-1]);
+            auto next_val = verify_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, func_tags);
+            stack[arg_stack_end] = next_val;
+            arg_stack_end++;
+            if(!is_par) break;
+            if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
+            auto pos_id = program[pos].id;
+            if(pos_id==syntax::rpar) {++pos;break;}
+            if(pos_id!=syntax::comma) error("expecting comma or closing parenthesis but found: "+totoken(pos_id), program[func_pos]);
+        }
+        switch(func_name) {
+            case syntax::nadd: 
+            case syntax::nmul: {
+                ASSERT_MINSIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                for(auto j=arg_stack_pos+2;j<arg_stack_end;++j) 
+                    if(!match(stack[j], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                return tags::isnat;
+            }
+            case syntax::nsub: 
+            case syntax::ndiv: {
+                ASSERT_SIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                return tags::isnat;
+            }
+            case syntax::nle: 
+            case syntax::nge: 
+            case syntax::nlt: 
+            case syntax::ngt: 
+            case syntax::neq: 
+            case syntax::nneq: 
+            case syntax::nnot: {
+                ASSERT_SIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                return tags::isbool;
+            }
+            case syntax::nprint: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                return tags::isnever;
+            }
+            case syntax::fadd: 
+            case syntax::fmul: {
+                ASSERT_MINSIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                for(auto j=arg_stack_pos+2;j<arg_stack_end;++j) 
+                    if(!match(stack[j], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                return tags::isfloat;
+            }
+            case syntax::fsub: 
+            case syntax::fdiv: 
+            case syntax::pow: {
+                ASSERT_SIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                return tags::isfloat;
+            }
+            case syntax::fle: 
+            case syntax::fge: 
+            case syntax::flt: 
+            case syntax::fgt: 
+            case syntax::feq: 
+            case syntax::fneq: {
+                ASSERT_SIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                return tags::isbool;
+            }
+            case syntax::fprint: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                return tags::isnever;
+            }
+            case syntax::ncast: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                return tags::isnat;
+            }
+            case syntax::fcast: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                return tags::isfloat;
+            }
+            case syntax::sprint: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only float arguments", program[func_pos]);
+                return tags::isnever;
+            }
+            case syntax::sadd: {
+                ASSERT_MINSIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                for(auto j=arg_stack_pos+2;j<arg_stack_end;++j) 
+                    if(!match(stack[j], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isstring;
+            }
+            case syntax::lget: {
+                ASSERT_SIZE(2);
+                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only list first argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
+                return 0; // unknown type
+            }
+            case syntax::list: {
+                assert(arg_stack_pos<=arg_stack_end);
+                return tags::islist;
+            }
+            case syntax::ladd: {
+                ASSERT_SIZE(2);
+                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only list arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::islist)) error("accepts only list arguments", program[func_pos]);
+                for(auto j=arg_stack_pos+2;j<arg_stack_end;++j) 
+                    if(!match(stack[j], tags::islist)) error("accepts only list arguments", program[func_pos]);
+                return tags::islist;
+            }
+            case syntax::cos: 
+            case syntax::sin: 
+            case syntax::tan: 
+            case syntax::cosh: 
+            case syntax::sinh: 
+            case syntax::tanh: 
+            case syntax::exp: 
+            case syntax::atan: 
+            case syntax::acos: 
+            case syntax::asin: {
+                ASSERT_SIZE(1);
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                return tags::isfloat;
+            }
+            case syntax::llen: {
+                ASSERT_SIZE(1);
+                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only list arguments", program[func_pos]);
+                return tags::isnat;
+            }
+            case syntax::slen: {
+                ASSERT_SIZE(1);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isnat;
+            }
+            case syntax::seq: 
+            case syntax::sneq: {
+                ASSERT_SIZE(2);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isbool;
+            }
+            case syntax::nstring: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                return tags::isstring;
+            }
+            case syntax::fstring: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                return tags::isstring;
+            }
+            case syntax::split: {
+                ASSERT_SIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::islist;
+            }
+            case syntax::sslice: {
+                ASSERT_SIZE(3); 
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string first argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+2], tags::isnat)) error("accepts only nat third argument", program[func_pos]);
+                return tags::isstring;
+            }
+            case syntax::lslice: {
+                ASSERT_SIZE(3); 
+                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only string first argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+2], tags::isnat)) error("accepts only nat third argument", program[func_pos]);
+                return tags::islist;
+            }
+            case syntax::exists: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isbool;
+            }
+            case syntax::write: {
+                ASSERT_SIZE(2); 
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isnever;
+            }
+            case syntax::open: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isstring;
+            }
+            case syntax::nconvert: {
+                ASSERT_SIZE(1);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isnat;
+            }
+            case syntax::fconvert: {
+                ASSERT_SIZE(1);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isfloat;
+            }
+            case syntax::exec: {
+                ASSERT_SIZE(1); 
+                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                return tags::isstring;
+            }
+            default: break;
+        }
+        return verify_function(program, func_positions, func_name, arg_stack_pos, arg_stack_end, globals, func_pos, func_tags); 
+    }
+    error("failed to find local variable or function: "+totoken(local_id), program[pos<program.size()?pos:(program.size()-1)]);
+    return 0;
+}
+
+u64 verify_function(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64 name, u64 arg_stack_pos, u64 arg_stack_end, unordered_map<u64, u64>& globals, u64 error_token, unordered_map<u64, u64>& func_tags) {
+    //cout << "calling "+totoken(name)+"\n";
+    auto found_tag = func_tags.find(name);
+    if(found_tag!=func_tags.end()) {
+        auto ret = found_tag->second;
+        if(ret==tags::calling_tag) return 0; // have unknown type for recursive calls
+        return ret;
+    }
+    func_tags[name] = tags::calling_tag;
+    auto vars = unordered_map<u64, u64>{};
+    auto positer = func_positions.find(name);
+    auto current_arg = arg_stack_pos;
+    //auto vars = unordered_map<u64, u64>{};
+    if(positer==func_positions.end()) error("cannot find function: "+totoken(name), program[error_token]);
+    auto isnamespace = program[positer->second-1].id==syntax::names;
+    for(auto pos = positer->second+1;pos<program.size();) {
+        auto current_id = program[pos].id;
+        if(current_id==syntax::fn || current_id==syntax::names) break;
+        if(current_id==syntax::iff) {
+            auto iff_error = program[pos];
+            ++pos;
+            auto result = verify_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, func_tags);
+            if(result!=tags::isbool && result!=tags::isnever) error("obtained from a non-boolean returning operation", iff_error);
+            if(result==tags::isnever && pos<program.size() && program[pos].id!=syntax::then) 
+                if(program[pos].id!=syntax::then) error("unreachable return statement", program[pos]);
+            if(result==tags::isnever) continue;
+            pos++;
+            auto prev_ret = func_tags[name];
+            auto new_ret = verify_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, func_tags);
+            if(prev_ret==tags::calling_tag || prev_ret==0) func_tags[name] = new_ret;
+            else if(new_ret && new_ret!=prev_ret) error("mismatching returns", program[error_token]);
+            continue;
+        }
+        if(current_id==syntax::let) {
+            if(pos>=program.size()) return 0;
+            ++pos;
+            if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
+            auto var_name = program[pos].id;
+            auto is_global = program[pos].tag==tags::isglobal;
+            if(is_global) error("cannot externally set namespace variables", program[pos]);//globals[var_name] = result;
+            ++pos;
+            if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
+            if(program[pos].id!=syntax::eq) error("expecting assignment symbol = but got: "+totoken(program[pos].id), program[program.size()-1]);
+            ++pos;
+            auto result = verify_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, func_tags);
+            vars[var_name] = result;
+            continue;
+        }
+        if(current_id==syntax::arg) {
+            //if(pos>=program.size()) return 0;//
+            if(pos+1>=program.size()) error("unexpected end of file");
+            if(isnamespace) error("namespaces cannot have arguments");
+            ++pos;
+            auto arg_name = program[pos].id;
+            if(program[pos].tag==tags::isglobal) error("cannot set global variable as argument: "+totoken(arg_name), program[pos]);
+            if(current_arg>=arg_stack_end) error("not enough input arguments to unpack: "+totoken(arg_name), program[error_token]);
+            vars[arg_name] = 0;//stack[current_arg];
+            ++current_arg;
+            ++pos;
+            continue;
+        }
+        error("unexpected syntax token: "+totoken(current_id), program[pos]);
+    }
+    if(func_tags[name]==tags::calling_tag) func_tags[name] = 0;
+    //cout << "inferred "<<func_tags[name]<< " for "<<tokens[name] << "\n";
+    if(isnamespace) for(const auto& [k,v]:vars) globals[id(tokens[name]+"::"+tokens[k])] = v;
+    return func_tags[name];
+}
+
+u64 verify(const vector<Token>& program) {
+    // find function definitions and apply closure for variable names
+    auto func_tags = unordered_map<u64, u64>{};
+    auto func_positions = unordered_map<u64, u64>{};
+    auto globals = unordered_map<u64, u64>{};
+    auto last_return = u64{0};
+    for(size_t i=0;i<program.size()-1;++i) {
+        auto current_pos = i;
+        auto current_id = program[i].id;
+        if(current_id==syntax::sym) {
+            i += 3;
+            continue;
+        }
+        if(current_id!=syntax::fn && current_id!=syntax::names) continue;
+        ++i;
+        auto last_func_name = program[i].id;
+        if(func_positions.find(last_func_name)!=func_positions.end()) error("multiple definitions of: "+totoken(last_func_name), program[i]);
+        func_positions[last_func_name] = i;
+        if(current_id!=syntax::names) continue; // directly run namespace
+        if(current_id==syntax::names) {
+            last_return = verify_function(program, func_positions, last_func_name, 0, 0, globals, current_pos, func_tags);
             if(last_return!=0) return last_return;
         }
     }
@@ -766,5 +1127,6 @@ int main(int argc, const char** argv) {
     auto program = vector<Token>{};
     auto syms = unordered_map<u64,Token>{};
     import(path, program, syms, 0);
+    verify(program);
     return interpret(program);
 }

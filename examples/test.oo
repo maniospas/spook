@@ -1,0 +1,6 @@
+\dep "boring.oo"
+
+
+namespace main
+    let x = 10
+    | nprint x 

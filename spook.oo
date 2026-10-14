@@ -9,3 +9,7 @@
 🪦 →  = \then
 🪦 🧹 = \del
 🪦 🕯️ = \dep
+
+🏚️ bool
+    🎃 true  = 1 .neq 1
+    🎃 false = 1 .nneq 1

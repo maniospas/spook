@@ -4,8 +4,12 @@
 symbol fn = \fn
 symbol let = \let
 symbol arg = \arg
-symbol namespace = \sp
+symbol sp = \sp
 symbol | = \do
 symbol then  = \then
 symbol del = \del
 symbol 🕯️ = \dep
+
+sp bool
+    let true  = 1 .neq 1
+    let false = 1 .nneq 1

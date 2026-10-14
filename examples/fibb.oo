@@ -1,10 +1,9 @@
 \dep "boring.oo"
 
-symbol ALWAYS = 1
 fn fib 
     arg n
     | n.nle 1 then n
-    | ALWAYS  then nadd(
+    | bool::true then nadd(
         fib n.nsub 1,
         fib n.nsub 2
     )

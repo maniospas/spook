@@ -1,0 +1,17 @@
+\dep "spook.oo"
+
+🏚️ pair
+    🎃 x = 0
+    🎃 y = 1
+    
+👻  norm
+    🕸️ p
+    🎃 x = p.get(pair::x)
+    🎃 y = p.get(pair::y)
+    🎃 x2 = x.fmul x
+    🎃 y2 = y.fmul y
+    | bool::true → fadd(x,y).pow(0.5)
+
+🏚️ main
+    🎃 p = list(1.0,2.0)
+    | fprint norm p
