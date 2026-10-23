@@ -144,7 +144,8 @@ namespace main
 
 Want to pretend that *spook* can deal with objects? Suuuure. Of *course* it can! Kind of.
 Like in the following ungodly example that is perhaps scarier that the syntax. See what 
-we did there? We use *from* (💔) and *as* (🪞)
+we did there? We use *from* (💔) and *as* (🪞) to go back and forth
+between a list and its type representation. The benefit is that the *norm* function would complain during a short typechecking phase if we provided something else.
 
 ```cpp
 \dep "boring.oo"
