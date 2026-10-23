@@ -84,8 +84,8 @@ returned value expression and returns its outcome (prevents further statements i
 
 **types... kind of? READ AT YOUR OWN RISK**
 
-Sometimes you may want to have some semplance of type safety. Which spook deal with in a very ...scary... manner.
-- **value.🪞("my type name")** is used within expressions to ensure a variable type. This is the non-scary part that ensures that a value has a specific type specified by a string. If a type is already known and incompatible, you will get a typechecking error. Otherwise, you are asking the language's minimal type checking to treat the value as if it were of the given type. Provide `"nat", "list", "float", "string", "bool", "never"` to check for the builtin types, but you can also use whetever type name you want to see at runtime. So far so good.
+Sometimes you may want to have some semplance of type safety. Which spook deals with in a very ...scary... manner.
+- **value.🪞("my type name")** is used within expressions to ensure a variable type. This is the non-scary part that ensures that a value has a specific type specified by a string. If a type is already known and incompatible, you will get a typechecking error. Otherwise, you are asking the language's minimal type checking to treat the value as if it were of the given type. Provide `"nat", "list", "float", "string", "bool", "never"` to check for the builtin types, but you can also use whatever type name you want to see at runtime. So far so good.
 - **value.💔("my type name")** is used within expressions *to strip away* the given type after checking that it is correct. 
 
 Why on earth would one want to do that to their type system, you ask? Why, of course because the type system is eerily primitive (as in, non-sophisticated - subsequent pun intended) and cannot reason about non-primitive types. Not even to save its neck from a vampire! 
@@ -240,7 +240,7 @@ Python and its executable is <200KB. Can
 call your system's curl and stuff via 
 the `exec` command.
 
-*Q: Is there a type system?*
+*Q: Is there a type system or not?*
 
 Type system? What type system? Didn't you get
 the memo that computers run on only 0 and 1?
@@ -251,7 +251,8 @@ BUT! There are proper memory safety errors,
 plus a simple analysis to identify obvious type
 issues. Actually, this analysis will only 
 leave unchecked the point where values are offloaded
-from lists and complex recursive schemas.
+from lists and complex recursive schemas, at which
+point you can cast the types yourself.
 
 For example, try to use
 *fprint* to print the outcome of a *fib* example
