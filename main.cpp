@@ -221,16 +221,16 @@ inline ReturnList get_list(u64 _meta, const Token& error_token) {
 #define ASSERT_SIZE(desired_size) if(arg_stack_end!=arg_stack_pos+desired_size)error("wrong number of input arguments to unpack in builtin function: "+totoken(func_name), program[error_token]);
 #define ASSERT_MINSIZE(desired_size) if(arg_stack_end<arg_stack_pos+desired_size)error("not enough input arguments to unpack in builtin function: "+totoken(func_name), program[error_token]);
 u64 call_function(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64 name, u64 arg_stack_pos, u64 arg_stack_end, unordered_map<u64, u64>& globals, u64 error_tokens);
-u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry);
-u64 process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos) {
-    auto ret = _process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_pos, nullptr);
+u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry, u64* tail_call_redirect);
+u64 process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* tail_call_redirect) {
+    auto ret = _process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_pos, nullptr, tail_call_redirect);
     while(pos<program.size() && program[pos].id==syntax::dot) {
         ++pos;
-        ret = _process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_pos, &ret);
+        ret = _process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_pos, &ret, tail_call_redirect);
     }
     return ret;
 }
-u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry) {
+u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry, u64* tail_call_redirect) {
     if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
     auto local_id = program[pos].id;
     if(!curry) {
@@ -257,7 +257,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
         while(true) {
             ++pos;
             //if(pos>=program.size()) error("unexpected end of file3", program[program.size()-1]);
-            auto next_val = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end);
+            auto next_val = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, nullptr);
             stack[arg_stack_end] = next_val;
             arg_stack_end++;
             if(!is_par) break;
@@ -474,6 +474,10 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
             }
             default: break;
         }
+        if(tail_call_redirect && func_name+1==*tail_call_redirect) {
+            *tail_call_redirect = 0;
+            return arg_stack_pos+STACK_SIZE*arg_stack_end;
+        }
         return call_function(program, func_positions, func_name, arg_stack_pos, arg_stack_end, globals, func_pos); 
     }
     error("failed to find local variable or function: "+totoken(local_id), program[pos<program.size()?pos:(program.size()-1)]);
@@ -493,12 +497,20 @@ u64 call_function(const vector<Token>& program, const unordered_map<u64, u64>& f
         if(current_id==syntax::fn || current_id==syntax::names) break;
         if(current_id==syntax::iff) {
             ++pos;
-            auto result = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end);
+            auto result = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, nullptr);
             if(result!=0) {
                 if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
                 if(program[pos].id!=syntax::then) error("expecting continuation symbol → but got: "+totoken(program[pos].id), program[pos]);
                 pos++;
-                return process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end);
+                auto tail_call_skip = name+1;
+                auto ret = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, &tail_call_skip);
+                if(!tail_call_skip) {
+                    arg_stack_end = ret/STACK_SIZE;
+                    arg_stack_pos = ret-STACK_SIZE*arg_stack_end;
+                    pos = positer->second+1;
+                    continue;
+                }
+                return ret;
             }
             while(pos<program.size()) {
                 current_id = program[pos].id;
@@ -519,7 +531,7 @@ u64 call_function(const vector<Token>& program, const unordered_map<u64, u64>& f
             if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
             if(program[pos].id!=syntax::eq) error("expecting assignment symbol = but got: "+totoken(program[pos].id), program[program.size()-1]);
             ++pos;
-            auto result = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end);
+            auto result = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, nullptr);
             vars[var_name] = result;
             continue;
         }

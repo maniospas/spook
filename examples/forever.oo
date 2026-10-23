@@ -1,0 +1,9 @@
+\dep "boring.oo"
+
+fn forever
+    arg message
+    | sprint message
+    | bool::true then forever message
+
+namespace main
+    let ignored_result = forever "forever"

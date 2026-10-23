@@ -112,7 +112,8 @@ Others:
 # Some patterns
 
 As a primarily functional language, use recursion for looping. Like this.
-Yes, there's tail call optimization.
+Yes, there's tail call optimization; this particular function does not crash 
+by removing `.nsub 1`.
 
 ```cpp
 \dep "boring.oo"
