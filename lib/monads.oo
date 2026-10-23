@@ -1,0 +1,9 @@
+\fn count
+    \arg pos
+    \do bool::true then list(pos)
+
+\fn cnext
+    \arg c
+    \let pos = c.get 0
+    \do c.set(0, pos.nadd 1)
+    \do bool::true then pos

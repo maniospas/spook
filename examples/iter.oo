@@ -1,0 +1,9 @@
+\dep "boring.oo"
+
+fn countdown
+    arg remaining
+    | nprint remaining
+    | remaining.nneq 0 then countdown remaining.nsub 1
+
+namespace main
+    let ignored_result = countdown 10

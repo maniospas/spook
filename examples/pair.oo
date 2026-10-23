@@ -1,8 +1,8 @@
 \dep "spook.oo"
 
 🏚️ pair
-    🎃 x = 0 # type "float"
-    🎃 y = 1 # type "float"
+    🎃 x = 0 # ~ float
+    🎃 y = 1 # ~ float
     
 👻  norm
     🕸️ p

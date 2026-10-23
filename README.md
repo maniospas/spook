@@ -35,8 +35,8 @@ example.
 
 Run this program per `./spook main.oo`.
 
-The syntax can be reconfigured. Here's a version with boring syntax. I hope,
-given the explanation for `|` above, that it does not need any further explaining.
+The syntax can be reconfigured. Here's a version with boring syntax. I hope
+that it does not need any further explaining (it reuses `|` from above).
 Right? Here we do need some highlighting, but more on this in the future - if at all.
 
 ```cpp
@@ -53,7 +53,6 @@ fn fib
 namespace main
     let result = fib 30
     | nprint result
-
 ```
 
 
@@ -98,7 +97,8 @@ Others:
 - *ncast,fcast* cast nats to floats and conversely (the first letter is the return type)
 - *nconvert,fconvert* convert strings to nats or floats
 - *nstring,fstring* convert nats or floats to strings
-- *lget* get a list element
+- *get* get a list element
+- *set* set a list element
 - *llen* list length
 - *slen* string length
 - *lslice(from,to)* get a sublist (zero-copy)
@@ -108,6 +108,23 @@ Others:
 - *read()* read a user input from the console
 - *read(path)* read a path string (file or dir) as a string, where dir paths have each entry in a new line
 - *write(path,string)* write a string onto a file
+
+# Some patterns
+
+As a primarily functional language, use recursion for looping. Like this.
+Yes, there's tail call optimization.
+
+```cpp
+\dep "boring.oo"
+
+fn countdown
+    arg remaining
+    | nprint remaining
+    | remaining.nneq 0 then countdown remaining.nsub 1
+
+namespace main
+    let ignored_result = countdown 10
+```
 
 
 ## FAQ
@@ -145,7 +162,7 @@ Read *syperspook.oo* to make sense of available symbol substitutions.
 
 *Q: MOARE SPOOK!*
 
-Nobody stops you from using emojis as names. Like this:
+Superspook was not enough? Nobody stops you from using emojis as names. Like this:
 
 <details><summary>Cursed program hidden - click here to show it.</summary>
 
@@ -194,9 +211,9 @@ from lists and complex recursive schemas.
 
 For example, try to use
 *fprint* to print the outcome of a *fib* example
-and you will see a nice . 
+and you will see a nice error. 
 In case where values are uncertain, you will
-have to rely to good-old crashes.
+have to rely on good-old crash errors.
 
 *Q: I see file operations. Are spook programs gonna wreck my PC?*
 

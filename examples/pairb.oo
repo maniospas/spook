@@ -1,6 +1,6 @@
 \dep "boring.oo"
 
-sp pair
+namespace pair
     let x = 0
     let y = 1
     
@@ -12,6 +12,6 @@ fn norm
     let y2 = y.fmul y
     | bool::true then fadd(x2,y2).pow(0.5)
 
-sp main
+namespace main
     let p = list(1.0,2.0)
-    | nprint norm p
+    | fprint norm p

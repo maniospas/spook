@@ -98,6 +98,7 @@ namespace syntax {
     const u64 exists = 74;
     const u64 sym = 75;
     const u64 req = 76;
+    const u64 lset = 77;
 }
 namespace tags {
     const u16 isnat = 1;
@@ -326,6 +327,15 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
                 if(entry>=list.len) error("list index "+to_string(entry)+" outside of list length "+to_string(list.len), program[func_pos]);
                 return list.ptr[entry];
             }
+            case syntax::lset: {
+                ASSERT_SIZE(3);
+                auto list = get_list(stack[arg_stack_pos], program[func_pos]);
+                auto entry = stack[arg_stack_pos+1];
+                auto value = stack[arg_stack_pos+2];
+                if(entry>=list.len) error("list index "+to_string(entry)+" outside of list length "+to_string(list.len), program[func_pos]);
+                list.ptr[entry] = value;
+                return 0;
+            }
             case syntax::list: {
                 assert(arg_stack_pos<=arg_stack_end);
                 auto n = arg_stack_end-arg_stack_pos;
@@ -550,10 +560,8 @@ u64 interpret(const vector<Token>& program) {
         if(func_positions.find(last_func_name)!=func_positions.end()) error("multiple definitions of: "+totoken(last_func_name), program[i]);
         func_positions[last_func_name] = i;
         if(current_id!=syntax::names) continue; // directly run namespace
-        if(current_id==syntax::names) {
-            last_return = call_function(program, func_positions, last_func_name, 0, 0, globals, current_pos);
-            if(last_return!=0) return last_return;
-        }
+        last_return = call_function(program, func_positions, last_func_name, 0, 0, globals, current_pos);
+        if(last_return!=0) return last_return;
     }
     return 0;
 }
@@ -707,6 +715,12 @@ u64 _verify_expression(const vector<Token>& program, const unordered_map<u64, u6
                 if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
                 return 0; // unknown type
             }
+            case syntax::lset: {
+                ASSERT_SIZE(3);
+                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only list first argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
+                return tags::isnever;
+            }
             case syntax::list: {
                 assert(arg_stack_pos<=arg_stack_end);
                 return tags::islist;
@@ -842,8 +856,7 @@ u64 verify_function(const vector<Token>& program, const unordered_map<u64, u64>&
             ++pos;
             auto result = verify_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, func_tags);
             if(result!=tags::isbool && result!=tags::isnever) error("obtained from a non-boolean returning operation", iff_error);
-            if(result==tags::isnever && pos<program.size() && program[pos].id!=syntax::then) 
-                if(program[pos].id!=syntax::then) error("unreachable return statement", program[pos]);
+            if(result==tags::isnever && pos<program.size() && program[pos].id==syntax::then) error("unreachable return statement", program[pos]);
             if(result==tags::isnever) continue;
             pos++;
             auto prev_ret = func_tags[name];
@@ -894,6 +907,7 @@ u64 verify(const vector<Token>& program) {
     auto func_positions = unordered_map<u64, u64>{};
     auto globals = unordered_map<u64, u64>{};
     auto last_return = u64{0};
+    auto open_function = false;
     for(size_t i=0;i<program.size()-1;++i) {
         auto current_pos = i;
         auto current_id = program[i].id;
@@ -901,16 +915,18 @@ u64 verify(const vector<Token>& program) {
             i += 3;
             continue;
         }
-        if(current_id!=syntax::fn && current_id!=syntax::names) continue;
+        if(current_id!=syntax::fn && current_id!=syntax::names) {
+            if(!open_function) error("unknown global-level symbol: "+totoken(program[i].id), program[i]);
+            continue;
+        }
+        open_function = true;
         ++i;
         auto last_func_name = program[i].id;
         if(func_positions.find(last_func_name)!=func_positions.end()) error("multiple definitions of: "+totoken(last_func_name), program[i]);
         func_positions[last_func_name] = i;
         if(current_id!=syntax::names) continue; // directly run namespace
-        if(current_id==syntax::names) {
-            last_return = verify_function(program, func_positions, last_func_name, 0, 0, globals, current_pos, func_tags);
-            if(last_return!=0) return last_return;
-        }
+        last_return = verify_function(program, func_positions, last_func_name, 0, 0, globals, current_pos, func_tags);
+        //if(last_return!=0) return last_return;
     }
     return 0;
 }
@@ -946,7 +962,7 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
                 // if in string
                 in_string = false;
                 if(program.size()>=1 && program[program.size()-1].id==syntax::req) {
-                    if(depth>=10) error("more than 10 import levels - likely due to circular import: "+path, program[program.size()-1]);
+                    if(depth>=10) error("more than 10 import levels - due to circular import or overengineering: "+path, program[program.size()-1]);
                     program.pop_back();
                     import(current_token, program, syms, depth+1);
                     current_token = "";
@@ -1123,6 +1139,7 @@ int main(int argc, const char** argv) {
     id("exists");
     id("\\sym");
     id("\\dep"); // import
+    id("set"); // import
 
     auto program = vector<Token>{};
     auto syms = unordered_map<u64,Token>{};
