@@ -116,8 +116,10 @@ struct StringEntry { char* ptr; u32 refcount; u32 size; };
 vector<ListEntry> lists;
 vector<StringEntry> strings;
 
-struct _Identifier { u32 start; u16 len_plus_one; u16 host; }; // reserve zero len for consuming until the end
-union Identifier { u64 id; _Identifier meta; };
+#define SSO_SIZE 6
+struct _Identifier { u32 start; u16 host; u16 len_plus_one; }; // reserve zero len for consuming until the end
+struct _SSO { char data[SSO_SIZE]; u16 len_plus_one; }; // reserve zero len for consuming until the end
+union Identifier { u64 id; _Identifier meta; _SSO sso;};
 vector<FILE*> files;
 unordered_map<string, u64> token2id;
 vector<string> tokens;
@@ -169,18 +171,35 @@ _Identifier unpack(u64 id) {
 }
 u64 register_string(const string& name) {
     auto n = name.size();
+    if(n<=SSO_SIZE) {
+        static_assert (sizeof(_SSO) == sizeof(u64), "SSO is not properly aligned.");
+        auto cstr = name.c_str();
+        Identifier idf;
+        memcpy(idf.sso.data, cstr, n+1);
+        idf.sso.len_plus_one = tou16(n+1);
+        //assert(idf.sso.len_plus_one==idf.meta.len_plus_one);
+        return idf.id;
+    }
     auto ptr = (char*)malloc(n);
     for (int index=0; index<n; index++)
         ptr[index] = name[index];
     auto pos = strings.size();
     strings.push_back(StringEntry{.ptr=ptr, .refcount=1, .size=tou32(n)});
     auto ret = pack(pos,0,0);
-    assert(unpack(ret).host==pos);
-    assert(unpack(ret).start==0);
+    //assert(unpack(ret).host==pos);
+    //assert(unpack(ret).start==0);
     return ret;
 }
-inline string_view get_string(u64 _meta, const Token& error_token) {
+
+inline string get_string(u64 _meta, const Token& error_token) {
     auto meta = unpack(_meta);
+    if(meta.len_plus_one && meta.len_plus_one<=SSO_SIZE+1) {
+        Identifier idf;
+        idf.id = _meta;
+        auto ret = string(idf.sso.data, idf.sso.len_plus_one-1);
+        return ret;
+    }
+
     if(meta.host>=strings.size()) error("not existing string index: "+to_string(meta.host), error_token);
     auto entry = strings[meta.host];
     if(!entry.ptr) error("no string exists anymore at index: "+to_string(meta.host), error_token);
@@ -192,7 +211,7 @@ inline string_view get_string(u64 _meta, const Token& error_token) {
         len = len-1;
         if(start+len>entry.size) error("substring is out of bounds at index: "+to_string(meta.host)+" with requested offset "+to_string(start)+" and length "+to_string(len)+" but the total length is "+to_string(entry.size), error_token);
     }
-    return string_view(entry.ptr+start, len);
+    return string{string_view(entry.ptr+start, len)};
 }
 u64 register_list(u64* ptr, u64 n) {
     auto pos = lists.size();
@@ -389,7 +408,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
                 return 0;
             }
             case syntax::sslice: {
-                ASSERT_SIZE(3); 
+                ASSERT_SIZE(3);
                 auto _meta = stack[arg_stack_pos];
                 auto meta = unpack(_meta);
                 auto data = get_string(_meta, program[func_pos]);
@@ -398,6 +417,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
                 if(start>data.size()) error("slice start "+to_string(start)+" out of bounds "+to_string(data.size()), program[func_pos]);
                 if(end<start) error("slice end less than start (must be exactly equal for empty string)", program[func_pos]);
                 if(end>data.size()) error("slice end out of bounds)", program[func_pos]);
+                if(meta.len_plus_one && meta.len_plus_one<=SSO_SIZE+1) return register_string(data.substr(start, end-start));
                 return pack(meta.host, tou16(u64{meta.start}+start), tou16(end-start+1));
             }
             case syntax::lslice: {
@@ -1087,7 +1107,7 @@ int main(int argc, const char** argv) {
     id("\\let");
     id("\\fn");
     id("\\arg");
-    id("\\clean");
+    id("\\del");
     id("\\do");//if
     id("nadd");
     id("nmul");

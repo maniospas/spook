@@ -78,8 +78,8 @@ returned value expression and returns its outcome (prevents further statements i
 **expressions**
 - Constants and local variables are expressions. Constants can be strings, nats, or floats.
 - Access namespace variables via `namespace::varname`. 
-- Call functions with comma-separated arguments in parentheses like `nadd(x,y)`. Arguments are parsed expressions themselves (),
-- optionally, call functions with one argument using syntax like `cos|3.141592`. This makes for handy chaining.
+- Call functions with comma-separated arguments in parentheses like `nadd(x,y)`. Arguments are parsed expressions themselves. Pass at least one argument to functions - 0 if unsure. Redundant arguments are ignored.
+- Optionally, call functions with one argument using syntax like `cos 3.141592`. This makes for handy chaining.
 
 **builtin functions**
 
@@ -222,6 +222,20 @@ Part of the spookiness, right? For now, the language just
 refuses to overwrite files.
 
 Some advanced safety features may be added in the future.
+
+*Q: Excuse me? GC much?*
+
+Not only is there no garbage collector (GC), I have not even implemented
+the *del* operator yet for cleanup. Still undecided on what to do.
+For now, write small scripts and let the operating system clean up.
+But there is one specific optimization for small strings: those
+that are at most 6 bytes in size do not allocate. It's something. Riiight?
+
+...
+
+BOO!
+
+(Just felt that the awkwardness was a good point for a jumpscare.)
 
 *Q: It's cumbersome to use emojis.*
 

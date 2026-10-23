@@ -1,5 +1,4 @@
-\dep "spook.s"
+\dep "spook.oo"
 
-🪦 hello = "hello world!"
 🏚️ main
-    | sprint hello
+    | sprint "world!".sslice(2,6)
