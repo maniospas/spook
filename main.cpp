@@ -99,6 +99,9 @@ namespace syntax {
     const u64 sym = 75;
     const u64 req = 76;
     const u64 lset = 77;
+    const u64 type_union = 78;
+    const u64 as = 79;
+    const u64 from = 80;
 }
 namespace tags {
     const u16 isnat = 1;
@@ -169,6 +172,17 @@ _Identifier unpack(u64 id) {
     idf.id = id;
     return idf.meta;
 }
+u64 sso_id(const string& name) {
+    auto n = name.size();
+    assert(n<=SSO_SIZE);
+    static_assert (sizeof(_SSO) == sizeof(u64), "SSO is not properly aligned.");
+    auto cstr = name.c_str();
+    Identifier idf;
+    memcpy(idf.sso.data, cstr, n+1);
+    idf.sso.len_plus_one = tou16(n+1);
+    //assert(idf.sso.len_plus_one==idf.meta.len_plus_one);
+    return idf.id;
+}
 u64 register_string(const string& name) {
     auto n = name.size();
     if(n<=SSO_SIZE) {
@@ -218,6 +232,14 @@ u64 register_list(u64* ptr, u64 n) {
     lists.push_back(ListEntry{.ptr=ptr, .refcount=1, .size=tou32(n)});
     return pack(pos,0,0);
 }
+namespace quick_strings {
+    const u64 isnat    = sso_id("nat");
+    const u64 isfloat  = sso_id("float");
+    const u64 isstring = sso_id("str");
+    const u64 isbool   = sso_id("bool");
+    const u64 isnever  = sso_id("never");
+    const u64 islist   = sso_id("list");
+}
 
 struct ReturnList { u64* ptr; u64 len; };
 inline ReturnList get_list(u64 _meta, const Token& error_token) {
@@ -237,7 +259,7 @@ inline ReturnList get_list(u64 _meta, const Token& error_token) {
     return ReturnList{.ptr=entry.ptr+start, .len=len};
 }
 
-#define ASSERT_SIZE(desired_size) if(arg_stack_end!=arg_stack_pos+desired_size)error("wrong number of input arguments to unpack in builtin function: "+totoken(func_name), program[error_token]);
+#define ASSERT_SIZE(desired_size) if(arg_stack_end!=arg_stack_pos+desired_size)error("wrong number of input arguments to unpack in builtin function: "+totoken(func_name)+" found "+to_string(arg_stack_end-arg_stack_pos)+" but expected "+to_string(desired_size), program[error_token]);
 #define ASSERT_MINSIZE(desired_size) if(arg_stack_end<arg_stack_pos+desired_size)error("not enough input arguments to unpack in builtin function: "+totoken(func_name), program[error_token]);
 u64 call_function(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64 name, u64 arg_stack_pos, u64 arg_stack_end, unordered_map<u64, u64>& globals, u64 error_tokens);
 u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u64>& func_positions, u64& pos, unordered_map<u64, u64>& vars, unordered_map<u64, u64>& globals, u64 error_token, u64 arg_stack_pos, u64* curry, u64* tail_call_redirect);
@@ -271,6 +293,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
         if(curry) {
             stack[arg_stack_pos] = *curry;
             arg_stack_end++;
+            if(arg_stack_end>=STACK_SIZE) error("stack overflow", program[program.size()-1]);
         }
         if(is_par) ++pos; 
         while(true) {
@@ -279,6 +302,7 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
             auto next_val = process_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, nullptr);
             stack[arg_stack_end] = next_val;
             arg_stack_end++;
+            if(arg_stack_end>=STACK_SIZE) error("stack overflow", program[program.size()-1]);
             if(!is_par) break;
             if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
             auto pos_id = program[pos].id;
@@ -391,6 +415,10 @@ u64 _process_expression(const vector<Token>& program, const unordered_map<u64, u
             case syntax::atan: ASSERT_SIZE(1); return fromreal(atan(toreal(stack[arg_stack_pos])));
             case syntax::acos: ASSERT_SIZE(1); return fromreal(acos(toreal(stack[arg_stack_pos])));
             case syntax::asin: ASSERT_SIZE(1); return fromreal(asin(toreal(stack[arg_stack_pos])));
+            case syntax::as: 
+            case syntax::from: 
+                ASSERT_SIZE(2); 
+                return stack[arg_stack_pos];
             
             case syntax::llen: {
                 ASSERT_SIZE(1);
@@ -637,35 +665,52 @@ u64 _verify_expression(const vector<Token>& program, const unordered_map<u64, u6
         if(curry) {
             stack[arg_stack_pos] = *curry;
             arg_stack_end++;
+            if(arg_stack_end>=STACK_SIZE) error("stack overflow", program[program.size()-1]);
         }
-        if(is_par) ++pos; 
+        if(is_par) ++pos;
         while(true) {
             ++pos;
             //if(pos>=program.size()) error("unexpected end of file3", program[program.size()-1]);
             auto next_val = verify_expression(program, func_positions, pos, vars, globals, error_token, arg_stack_end, func_tags);
             stack[arg_stack_end] = next_val;
             arg_stack_end++;
+            if(arg_stack_end>=STACK_SIZE) error("stack overflow", program[program.size()-1]);
             if(!is_par) break;
             if(pos>=program.size()) error("unexpected end of file", program[program.size()-1]);
             auto pos_id = program[pos].id;
             if(pos_id==syntax::rpar) {++pos;break;}
-            if(pos_id!=syntax::comma) error("expecting comma or closing parenthesis but found: "+totoken(pos_id), program[func_pos]);
+            if(pos_id!=syntax::comma) error("expecting comma or closing parenthesis", program[func_pos]);
+        }
+        if(func_name==syntax::as || func_name==syntax::from) {
+            auto tok = program[pos-(is_par?2:1)];
+            if(tok.tag!=tags::isstring) error("expecting last argument of cast to be a string type name", program[func_pos]);
+            auto string_repr = register_string(get_string(tok.id, tok));
+            if(string_repr==quick_strings::isnat) string_repr = tags::isnat;
+            if(string_repr==quick_strings::isfloat) string_repr = tags::isfloat;
+            if(string_repr==quick_strings::isstring) {
+                string_repr = tags::isstring;
+                get_string(tok.id, tok); // TODO: find whatever ungodly UB makes this necessary for making islist correct
+            }
+            if(string_repr==quick_strings::islist) string_repr = tags::islist;
+            if(string_repr==quick_strings::isbool) string_repr = tags::isbool;
+            if(string_repr==quick_strings::isnever) string_repr = tags::isnever;
+            stack[arg_stack_end-1] = string_repr;
         }
         switch(func_name) {
             case syntax::nadd: 
             case syntax::nmul: {
                 ASSERT_MINSIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
                 for(auto j=arg_stack_pos+2;j<arg_stack_end;++j) 
-                    if(!match(stack[j], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                    if(!match(stack[j], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
                 return tags::isnat;
             }
             case syntax::nsub: 
             case syntax::ndiv: {
                 ASSERT_SIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
                 return tags::isnat;
             }
             case syntax::nle: 
@@ -676,30 +721,30 @@ u64 _verify_expression(const vector<Token>& program, const unordered_map<u64, u6
             case syntax::nneq: 
             case syntax::nnot: {
                 ASSERT_SIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
                 return tags::isbool;
             }
             case syntax::nprint: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
                 return tags::isnever;
             }
             case syntax::fadd: 
             case syntax::fmul: {
                 ASSERT_MINSIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 for(auto j=arg_stack_pos+2;j<arg_stack_end;++j) 
-                    if(!match(stack[j], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                    if(!match(stack[j], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 return tags::isfloat;
             }
             case syntax::fsub: 
             case syntax::fdiv: 
             case syntax::pow: {
                 ASSERT_SIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 return tags::isfloat;
             }
             case syntax::fle: 
@@ -709,48 +754,48 @@ u64 _verify_expression(const vector<Token>& program, const unordered_map<u64, u6
             case syntax::feq: 
             case syntax::fneq: {
                 ASSERT_SIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 return tags::isbool;
             }
             case syntax::fprint: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 return tags::isnever;
             }
             case syntax::ncast: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 return tags::isnat;
             }
             case syntax::fcast: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
                 return tags::isfloat;
             }
             case syntax::sprint: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 return tags::isnever;
             }
             case syntax::sadd: {
                 ASSERT_MINSIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 for(auto j=arg_stack_pos+2;j<arg_stack_end;++j) 
-                    if(!match(stack[j], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                    if(!match(stack[j], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isstring;
             }
             case syntax::lget: {
                 ASSERT_SIZE(2);
-                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only list first argument", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::islist)) error(tokens[func_name]+" accepts only list first argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error(tokens[func_name]+" accepts only nat second argument", program[func_pos]);
                 return 0; // unknown type
             }
             case syntax::lset: {
                 ASSERT_SIZE(3);
-                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only list first argument", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::islist)) error(tokens[func_name]+" accepts only list first argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error(tokens[func_name]+" accepts only nat second argument", program[func_pos]);
                 return tags::isnever;
             }
             case syntax::list: {
@@ -759,10 +804,10 @@ u64 _verify_expression(const vector<Token>& program, const unordered_map<u64, u6
             }
             case syntax::ladd: {
                 ASSERT_SIZE(2);
-                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only list arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::islist)) error("accepts only list arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::islist)) error(tokens[func_name]+" accepts only list arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::islist)) error(tokens[func_name]+" accepts only list arguments", program[func_pos]);
                 for(auto j=arg_stack_pos+2;j<arg_stack_end;++j) 
-                    if(!match(stack[j], tags::islist)) error("accepts only list arguments", program[func_pos]);
+                    if(!match(stack[j], tags::islist)) error(tokens[func_name]+" accepts only list arguments", program[func_pos]);
                 return tags::islist;
             }
             case syntax::cos: 
@@ -776,85 +821,97 @@ u64 _verify_expression(const vector<Token>& program, const unordered_map<u64, u6
             case syntax::acos: 
             case syntax::asin: {
                 ASSERT_SIZE(1);
-                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 return tags::isfloat;
             }
             case syntax::llen: {
                 ASSERT_SIZE(1);
-                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only list arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::islist)) error(tokens[func_name]+" accepts only list arguments", program[func_pos]);
                 return tags::isnat;
             }
             case syntax::slen: {
                 ASSERT_SIZE(1);
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isnat;
             }
+            case syntax::as: {
+                ASSERT_SIZE(2);
+                if(stack[arg_stack_pos+1]==0) error(tokens[func_name]+" cannot reinterpret as an unknow type",  program[func_pos]);
+                if(stack[arg_stack_pos] && stack[arg_stack_pos]!=stack[arg_stack_pos+1]) error(tokens[func_name]+" could not supply this type, because a different already known",  program[func_pos]);
+                return stack[arg_stack_pos+1];
+            } 
+            case syntax::from: {
+                ASSERT_SIZE(2);
+                if(stack[arg_stack_pos+1]==0) error(tokens[func_name]+" cannot reinterpret an unknow type",  program[func_pos]);
+                if(stack[arg_stack_pos+1]!=stack[arg_stack_pos]) error(tokens[func_name]+" could not guarantee that it abstracts away the required type",  program[func_pos]);
+                return 0; // from removes them type
+            } 
             case syntax::seq: 
             case syntax::sneq: {
                 ASSERT_SIZE(2);
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isbool;
             }
             case syntax::nstring: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isnat)) error("accepts only nat arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isnat)) error(tokens[func_name]+" accepts only nat arguments", program[func_pos]);
                 return tags::isstring;
             }
             case syntax::fstring: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isfloat)) error("accepts only float arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isfloat)) error(tokens[func_name]+" accepts only float arguments", program[func_pos]);
                 return tags::isstring;
             }
             case syntax::split: {
                 ASSERT_SIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::islist;
             }
             case syntax::sslice: {
                 ASSERT_SIZE(3); 
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string first argument", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
-                if(!match(stack[arg_stack_pos+2], tags::isnat)) error("accepts only nat third argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string first argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error(tokens[func_name]+" accepts only nat second argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+2], tags::isnat)) error(tokens[func_name]+" accepts only nat third argument", program[func_pos]);
                 return tags::isstring;
             }
             case syntax::lslice: {
                 ASSERT_SIZE(3); 
-                if(!match(stack[arg_stack_pos], tags::islist)) error("accepts only string first argument", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isnat)) error("accepts only nat second argument", program[func_pos]);
-                if(!match(stack[arg_stack_pos+2], tags::isnat)) error("accepts only nat third argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::islist)) error(tokens[func_name]+" accepts only string first argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isnat)) error(tokens[func_name]+" accepts only nat second argument", program[func_pos]);
+                if(!match(stack[arg_stack_pos+2], tags::isnat)) error(tokens[func_name]+" accepts only nat third argument", program[func_pos]);
                 return tags::islist;
             }
             case syntax::exists: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isbool;
             }
             case syntax::write: {
                 ASSERT_SIZE(2); 
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
-                if(!match(stack[arg_stack_pos+1], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos+1], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isnever;
             }
             case syntax::open: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isstring;
             }
             case syntax::nconvert: {
                 ASSERT_SIZE(1);
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isnat;
             }
             case syntax::fconvert: {
                 ASSERT_SIZE(1);
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isfloat;
             }
             case syntax::exec: {
                 ASSERT_SIZE(1); 
-                if(!match(stack[arg_stack_pos], tags::isstring)) error("accepts only string arguments", program[func_pos]);
+                if(!match(stack[arg_stack_pos], tags::isstring)) error(tokens[func_name]+" accepts only string arguments", program[func_pos]);
                 return tags::isstring;
             }
             default: break;
@@ -871,7 +928,7 @@ u64 verify_function(const vector<Token>& program, const unordered_map<u64, u64>&
     if(found_tag!=func_tags.end()) {
         auto ret = found_tag->second;
         if(ret==tags::calling_tag) return 0; // have unknown type for recursive calls
-        return ret;
+        //return ret; // recalculate for all calls by commenting this out - this allows us to accept arg types
     }
     func_tags[name] = tags::calling_tag;
     auto vars = unordered_map<u64, u64>{};
@@ -920,7 +977,8 @@ u64 verify_function(const vector<Token>& program, const unordered_map<u64, u64>&
             auto arg_name = program[pos].id;
             if(program[pos].tag==tags::isglobal) error("cannot set global variable as argument: "+totoken(arg_name), program[pos]);
             if(current_arg>=arg_stack_end) error("not enough input arguments to unpack: "+totoken(arg_name), program[error_token]);
-            vars[arg_name] = 0;//stack[current_arg];
+            vars[arg_name] = stack[current_arg];
+            //vars[arg_name] = 0;//stack[current_arg];
             ++current_arg;
             ++pos;
             continue;
@@ -963,7 +1021,8 @@ u64 verify(const vector<Token>& program) {
     return 0;
 }
 
-void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms, u64 depth) {
+void import(string path, vector<Token>& program, unordered_map<u64,Token>& _syms, u64 depth) {
+    auto syms = unordered_map<u64,Token>{};
     auto current_token = string{};
     auto file = ifstream{path};
     if(!file.is_open()) error("cannot open source: "+path);
@@ -976,12 +1035,12 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
         auto in_string = false;
         for(auto c:line) {
             ++col;
-            if(c=='\"') {
+            if(c=='\"' || c=='\'') {
                 if(!in_string) {
                     if(current_token.size()) {
                         u64 found_id;
                         u16 tag = 0;
-                        if(current_token.find("::")!=string::npos) {found_id = id(current_token);tag=tags::isglobal;}
+                        if(!tag && current_token.find("::")!=string::npos) {found_id = id(current_token);tag=tags::isglobal;}
                         if(!tag && current_token.find(".")==string::npos) try{ found_id = u64{stoull(current_token.c_str())}; tag=tags::isnat; } catch(...) {}
                         if(!tag && current_token.find(".")!=string::npos) try{ size_t pos=0;found_id = fromreal(stof(current_token.c_str(), &pos)); if(pos==current_token.size())tag=tags::isfloat;else error("cannot parse decimal number (use space to use dot after a natural) number: "+current_token, Token{.id=found_id, .tag=tag, .row=row, .col=col, .fileid=fileid}); } catch(...) {}
                         if(!tag) found_id = id(current_token);
@@ -1034,8 +1093,11 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
                     case '=': program.push_back(Token{.id=0, .row=row, .col=col, .fileid=fileid});break;
                     case '(': program.push_back(Token{.id=1, .row=row, .col=col, .fileid=fileid});break;
                     case ')': program.push_back(Token{.id=2, .row=row, .col=col, .fileid=fileid});break;
-                    case '[': program.push_back(Token{.id=3, .row=row, .col=col, .fileid=fileid});break;
-                    case ']': program.push_back(Token{.id=4, .row=row, .col=col, .fileid=fileid});break;
+                    case '[': 
+                        program.push_back(Token{.id=syntax::list, .row=row, .col=col, .fileid=fileid});
+                        program.push_back(Token{.id=1, .row=row, .col=col, .fileid=fileid});
+                        break;
+                    case ']': program.push_back(Token{.id=2, .row=row, .col=col, .fileid=fileid});break;
                     case ',': program.push_back(Token{.id=5, .row=row, .col=col, .fileid=fileid});break;
                     case '.': program.push_back(Token{.id=6, .row=row, .col=col, .fileid=fileid});break;
                     case '{': program.push_back(Token{.id=7, .row=row, .col=col, .fileid=fileid});break;
@@ -1074,6 +1136,7 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
             if(i+3>=program.size()) error("unexpected end of file", program[program.size()-1]);
             ++i;
             if(program[i].tag) error("cannot define literal as symbol", program[i]);
+            if(_syms.find(program[i].id)!=_syms.end()) error("cannot redefine literal as symbol because another depdency has done so", program[i]);
             auto replacor = program[i].id;
             ++i;
             if(program[i].id!=syntax::eq) error("expecting equality in symbol decleration", program[i]);
@@ -1086,6 +1149,7 @@ void import(string path, vector<Token>& program, unordered_map<u64,Token>& syms,
 
         }
     }
+    for(auto& it : syms) syms[it.first] = it.second;
 }
 
 int main(int argc, const char** argv) {
@@ -1172,6 +1236,9 @@ int main(int argc, const char** argv) {
     id("\\sym");
     id("\\dep"); // import
     id("set"); // import
+    id("\\infer"); // type_union
+    id("\\as");
+    id("\\from");
 
     auto program = vector<Token>{};
     auto syms = unordered_map<u64,Token>{};

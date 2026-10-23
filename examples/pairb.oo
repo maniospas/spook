@@ -5,13 +5,14 @@ namespace pair
     let y = 1
     
 fn norm
-    arg p
-    let x = p.get(pair::x)
-    let y = p.get(pair::y)
+    arg _p
+    let p = _p.from('pair').as('list')
+    let x = p.get pair::y
+    let y = p.get pair::x
     let x2 = x.fmul x
     let y2 = y.fmul y
     | bool::true then fadd(x2,y2).pow(0.5)
 
 namespace main
-    let p = list(1.0,2.0)
+    let p = [1.0, 2.0].from('list').as('pair')
     | fprint norm p

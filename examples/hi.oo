@@ -1,4 +1,5 @@
 \dep "spook.oo"
 
+
 🏚️ main
-    | sprint "world!".sslice(2,6)
+    | sprint 'world!'.sslice(2, 6)

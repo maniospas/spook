@@ -62,7 +62,7 @@ Syntax is basically a list of declarations organized
 into namespaces and functions. Any variable can be interpreted 
 as any other type using its byte representation into `u64`, 
 where things like strings and arrays are tracked via their 
-addresses into safely accessible buffer; you may get errors but not segfaults. 
+addresses into safely accessible buffers; you may get errors but not segfaults. 
 
 **declarations**
 
@@ -80,6 +80,21 @@ returned value expression and returns its outcome (prevents further statements i
 - Access namespace variables via `namespace::varname`. 
 - Call functions with comma-separated arguments in parentheses like `nadd(x,y)`. Arguments are parsed expressions themselves. Pass at least one argument to functions - 0 if unsure. Redundant arguments are ignored.
 - Optionally, call functions with one argument using syntax like `cos 3.141592`. This makes for handy chaining.
+- Use square brackets to create lists. Like this: `🎃 float_one = [1.0, 2.0, 3.0].get(0)`
+
+**types... kind of? READ AT YOUR OWN RISK**
+
+Sometimes you may want to have some semplance of type safety. Which spook deal with in a very ...scary... manner.
+- **value.🪞("my type name")** is used within expressions to ensure a variable type. This is the non-scary part that ensures that a value has a specific type specified by a string. If a type is already known and incompatible, you will get a typechecking error. Otherwise, you are asking the language's minimal type checking to treat the value as if it were of the given type. Provide `"nat", "list", "float", "string", "bool", "never"` to check for the builtin types, but you can also use whetever type name you want to see at runtime. So far so good.
+- **value.💔("my type name")** is used within expressions *to strip away* the given type after checking that it is correct. 
+
+Why on earth would one want to do that to their type system, you ask? Why, of course because the type system is eerily primitive (as in, non-sophisticated - subsequent pun intended) and cannot reason about non-primitive types. Not even to save its neck from a vampire! 
+Sooo... the trick to, for example, treat a list as an object, is to first remove its list type and then stapple another on top. Like
+Frankenstein's monster but worse: `[1.0, 2.0].💔("list").🪞("mypairtype")`. 
+
+*Neat, huh? Muhahaha!*
+
+See an actualy example of this monstrocity later.
 
 **builtin functions**
 
@@ -127,6 +142,33 @@ namespace main
     let ignored_result = countdown 10
 ```
 
+Want to pretend that *spook* can deal with objects? Suuuure. Of *course* it can! Kind of.
+Like in the following ungodly example that is perhaps scarier that the syntax. See what 
+we did there? We use *from* (💔) and *as* (🪞)
+
+```cpp
+\dep "boring.oo"
+
+namespace pair
+    let x = 0
+    let y = 1
+    
+fn norm
+    arg _p
+    # only allow pair values and treat them  as the lists they are
+    let p = _p.from('pair').as('list')
+    let x = p.get pair::y
+    let y = p.get pair::x
+    let x2 = x.fmul x
+    let y2 = y.fmul y
+    | bool::true then fadd(x2,y2).pow(0.5)
+
+namespace main
+    let p = [1.0, 2.0].from('list').as('pair')
+    | fprint norm p
+```
+
+
 
 ## FAQ
 
@@ -134,7 +176,7 @@ namespace main
 
 Can happen to the best of us. Dare I introduce you... to superspook?
 Enable it per `\dep "superspook.oo"` and have fun. Like the example below.
-Read *syperspook.oo* to make sense of available symbol substitutions.
+Read *superspook.oo* to make sense of available symbol substitutions.
 
 
 <details><summary>Cursed program hidden - click here to show it.</summary>
@@ -254,6 +296,12 @@ Or define your own dialect! The spook.oo dialect definition is copied below:
 🪦 →  = \then
 🪦 🧹 = \del
 🪦 🕯️ = \dep
+🪦 🪞 = \as
+🪦 💔 = \from
+
+🏚️ bool
+    🎃 true  = 0 .nneq 1
+    🎃 false = 1 .nneq 1
 ```
 
 *Q. Nice slop, bro.*

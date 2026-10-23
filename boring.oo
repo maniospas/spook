@@ -9,6 +9,8 @@ symbol | = \do
 symbol then  = \then
 symbol del = \del
 symbol dep = \dep
+symbol as = \as
+symbol from = \from
 
 
 namespace bool

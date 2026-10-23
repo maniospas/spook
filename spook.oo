@@ -9,7 +9,9 @@
 🪦 →  = \then
 🪦 🧹 = \del
 🪦 🕯️ = \dep
+🪦 🪞 = \as
+🪦 💔 = \from
 
 🏚️ bool
-    🎃 true  = 1 .neq 1
+    🎃 true  = 0 .nneq 1
     🎃 false = 1 .nneq 1
